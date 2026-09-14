@@ -462,3 +462,87 @@ cas réel quand un port n'a pas de coordonnées) à `Decimal(0)`. Un tel voyage
 apportait son CO₂ au numérateur sans apporter la moindre tonne-kilomètre —
 **le mécanisme même que la méthodologie chiffre à +26 %**, appliqué cette fois à
 la distance et non au cargo. Il sort désormais des deux termes.
+
+### Troisième passage (2026-09-14) : durcissement de la sentinelle et ce qu'il a trouvé
+
+La sentinelle du filet 4 (les mots) ne scannait ni les catalogues i18n, ni les
+services Python qui composent du texte sortant sans gabarit Jinja
+(`_social_readme` du kit ZIP, les récits d'origine). Les deux angles morts ont
+été comblés (`OUTWARD_PY_FILES`, `_i18n_sources()`), avec deux garde-fous pour
+ne pas confondre allégation et faux positif : une liste explicite de clés i18n
+**vérifiées comme internes** (`/kpi`, `/dashboard-perf` — la méthodologie
+§1.2 bis leur réserve le droit de porter ces grandeurs), et deux clés où
+« conteneur conventionnel » qualifie la **protection thermique de la
+cargaison**, jamais une comparaison d'émissions.
+
+Le durcissement a immédiatement trouvé quatre résidus réels, dont un bug de
+production caractérisé :
+
+- 🔴 **`app/services/cacao_stories.py` n'avait jamais reçu la correction
+  appliquée à `coffee_stories.py`** (la verticale sœur, « même contrat »
+  d'après son propre docstring). La page publique `/solutions/cacao` rendait
+  encore, pour de vrai, « **260 kg de CO₂ évités, vérifiables** » / « **290
+  kg of CO₂ avoided** » / « **240 kg de CO₂ évités** » — trois valeurs
+  d'exemple **chiffrées**, avec comparaison explicite à « un transport
+  conventionnel équivalent » dans les récits longs. Corrigé à l'identique du
+  traitement café : `_MARKETING_EXAMPLE[...]["co2_kg"] = None`, `_co2_phrase`
+  (format long) supprimée, `_co2_phrase_short` neutralisée (`del co2_kg`),
+  neuf gabarits de récit long (3 origines × 3 langues) réécrits pour ne plus
+  chiffrer d'évitement. Tests unitaires alignés sur `test_coffee_stories.py`.
+- 🔴 **`/voyage/{ref}` (traçabilité consommateur) portait un bloc entier**
+  gardé par `{% if co2_kg %}`, avec `-{{ co2_kg }} kg of CO₂ avoided` et « vs
+  an equivalent conventional cargo ship ». `co2_kg` était déjà ramené à `None`
+  côté routeur (défense en profondeur déjà appliquée), donc le bloc ne
+  s'affichait plus — mais les clés i18n `vg_co2_title`/`vg_co2_text`
+  auraient intégralement ressuscité l'allégation au premier retour d'un
+  `co2_kg` non nul (fusion malheureuse, copier-coller...). Le gabarit est
+  reclé sur `{% if cert %}` (le certificat existe, indépendamment de tout
+  chiffre) et les deux clés ne chiffrent plus rien.
+- 🟠 **SEO/traçabilité** : `home_meta_desc` (meta-description de la page
+  d'accueil, indexée par les moteurs) et `vg_lead` (chapô de `/voyage/{ref}`)
+  portaient encore « avoided CO₂ measured per lot » / « the CO₂ avoided ».
+  Reformulés en « emissions measured per lot, EU MRV-verified ».
+- 🟡 **`/preuves`, section formule** : le texte de repli posé au premier
+  passage (« méthode en cours de révision ») employait encore le mot
+  « émissions évitées ». Reformulé en un fait daté (« la formule de
+  comparaison publiée ici a été retirée, méthodologie v3.0 §11.1 ») plutôt
+  qu'une promesse implicite de remplacement — cohérent avec le §1.2 bis, qui
+  n'autorise aucune publication proactive d'un chiffre de substitution.
+- 🟡 Une clé i18n orpheline (`home_sched_co2_badge`, « Avoided CO₂ / pallet »,
+  zéro lecteur dans aucun gabarit) et un compteur social-proof mort
+  (`sp_counter_co2`, gardé derrière un compteur toujours à zéro depuis un
+  retrait antérieur) ont été nettoyés par cohérence, bien que non atteignables
+  en production.
+
+**Bug de calcul confirmé et corrigé** : `kpi_env.aggregate_ef`, méthode C, ne
+filtrait les voyages « exploitables » que sur `cargo_mrv_t is not None` — pas
+sur `has_kpi`. Un voyage à cargo MRV saisi mais CO₂ pas encore calculé (CO₂
+ramené à 0 par `_emissions_provider`, `has_kpi=False`) apportait ses
+tonnes-kilomètres au dénominateur **sans** apporter son CO₂ au numérateur,
+violant la règle §8.2 n°2 (déjà appliquée à la distance, cf. ci-dessus, pas
+encore au filtre `usable` lui-même) : l'EF agrégé en ressortait divisé par un
+facteur proche de 2. Corrigé (`usable = [... r.has_kpi]`), avec un test de
+régression dédié (`test_aggregate_ef_method_c_excludes_unknown_co2_from_denominator`).
+
+**Nettoyage cosmétique** : un bloc dupliqué verbatim dans
+`emission_ledger.LedgerResult` (champ `co2_op_t` + docstring, deux fois) et
+dans `compute_for_leg` (calcul de l'assiette Métier, deux fois) — retiré.
+`decarbonation.vessel_baseline_speed()` — zéro appelant, zéro test propre,
+`fleet_summary` lit déjà `Vessel.baseline_speed_kn` en bloc pour tous les
+navires chargés — supprimé plutôt que branché (le brancher aurait réintroduit
+un aller-retour DB par navire là où l'implémentation actuelle n'en fait
+aucun). CSS mort du curseur interactif retiré (`newtowt-public.css:893-956`,
+classes `__compass`/`__kicker`/`__control`/`__range`/`__grid`/`__tile`/…) —
+seules `.co2eq`, `.co2eq__foot` et `.co2eq__qr` survivent, encore utilisées
+par `_verification_qr.html`.
+
+**Décision explicitement différée** : `VesselKpiBlock.propulsion` (profil de
+propulsion agrégé au périmètre flotte/navire, `scope_propulsion_profile()`)
+est calculé et testé mais **n'a encore aucun lecteur gabarit** — contrairement
+à `.decarbonation`, affiché dans `_fleet_fragment.html`. La méthodologie en
+fait pourtant l'indicateur de communication de tête (§1.2 bis). Ce n'est pas
+un bug (rien ne l'affiche, donc rien n'affiche une valeur fausse), mais une
+carte KPI dédiée demanderait de nouvelles clés i18n × 5 langues et un choix de
+présentation (barre de segments colorée, cf. `voyage.html` pour le patron
+existant au niveau d'un seul voyage) — une décision produit, pas une
+correction de conformité, donc non prise silencieusement ici.
