@@ -1189,9 +1189,21 @@ async def _r17_rob_vs_flgo(ctx: RuleContext) -> list[CheckOutcome]:
 
 @rule("R20")
 async def _r20_cargo_mrv(ctx: RuleContext) -> list[CheckOutcome]:
-    """R20 — Cohérence Cargo MRV (DWT carried) ≥ cargaison déclarée (B/L) pour un
-    voyage chargé. **Sévérité Info** tant que D10 (rattachement commercial) n'est
-    pas câblé au certificat (lot 9) — arbitrage acté. Matrice §3."""
+    """R20 — Vraisemblance du cargo MRV pour un voyage chargé (méthodologie de
+    performance environnementale v3.0, §8.3 : « les deux SEULS contrôles
+    possibles à terre, le calcul de déplacement n'existant qu'à bord »).
+
+    Deux volets, rapportés indépendamment :
+
+    1. Cargo MRV (DWT carried) **≥** cargaison déclarée (B/L) moins tolérance
+       (``seuil_cargo_mrv_ecart_t``) — le contrôle d'origine.
+    2. Cargo MRV **≤** port en lourd du navire (``Vessel.deadweight_t``,
+       arbitré et câblé le 2026-09-14 : jusqu'ici présent au référentiel mais
+       consommé par aucune règle). S'abstient si ``deadweight_t`` n'est pas
+       encore renseigné pour ce navire (Admin → Flotte) — inconnu ≠ nul.
+
+    **Sévérité Info** tant que D10 (rattachement commercial) n'est pas câblé
+    au certificat (lot 9) — arbitrage acté. Matrice §3."""
     if ctx.leg is None:
         return []
     from app.models.nav_event import DepartureEvent
@@ -1207,9 +1219,12 @@ async def _r20_cargo_mrv(ctx: RuleContext) -> list[CheckOutcome]:
     cargo_mrv = cargo.cargo_mrv_t if cargo is not None else None
     if cargo_mrv is None:
         return []
+
+    outcomes: list[CheckOutcome] = []
+
     seuil = await _thr(ctx, "seuil_cargo_mrv_ecart_t")
     if Decimal(cargo_mrv) + seuil < cargo_bl:
-        return [
+        outcomes.append(
             CheckOutcome(
                 "fail",
                 f"R20 — Cargo MRV {cargo_mrv} t < cargaison B/L {cargo_bl} t (Info, D10 non résolu).",
@@ -1222,8 +1237,40 @@ async def _r20_cargo_mrv(ctx: RuleContext) -> list[CheckOutcome]:
                 subject=ctx.leg,
                 severity="info",
             )
-        ]
-    return _ok("R20 — Cargo MRV ≥ B/L (Info).")
+        )
+    else:
+        outcomes.append(
+            CheckOutcome("pass", "R20 — Cargo MRV ≥ B/L (Info).", subject=ctx.leg, severity="info")
+        )
+
+    deadweight = _as_decimal(_get(ctx.vessel, "deadweight_t")) if ctx.vessel is not None else None
+    if deadweight is not None:
+        if Decimal(cargo_mrv) > deadweight:
+            outcomes.append(
+                CheckOutcome(
+                    "fail",
+                    f"R20 — Cargo MRV {cargo_mrv} t > port en lourd du navire {deadweight} t "
+                    "(Info, D10 non résolu).",
+                    {
+                        "cargo_mrv_t": str(cargo_mrv),
+                        "deadweight_t": str(deadweight),
+                        "d10_pending": True,
+                    },
+                    subject=ctx.leg,
+                    severity="info",
+                )
+            )
+        else:
+            outcomes.append(
+                CheckOutcome(
+                    "pass",
+                    "R20 — Cargo MRV ≤ port en lourd (Info).",
+                    subject=ctx.leg,
+                    severity="info",
+                )
+            )
+
+    return outcomes
 
 
 @rule("R26")

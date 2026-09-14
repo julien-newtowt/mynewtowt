@@ -196,8 +196,10 @@ RULE_SEED: tuple[tuple[str, str, str, str, str, bool], ...] = (
     (
         "R20",
         "Cargo",
-        "Cargo MRV (DWT carried) ≥ cargaison déclarée (B/L) pour un voyage chargé "
-        "(Info tant que D10 non résolu).",
+        "Vraisemblance du cargo MRV (méthodologie §8.3) : ≥ cargaison déclarée "
+        "(B/L) moins tolérance (seuil_cargo_mrv_ecart_t), ET ≤ port en lourd "
+        "(Vessel.deadweight_t) — les deux seuls contrôles possibles à terre, le "
+        "calcul de déplacement n'existant qu'à bord (Info tant que D10 non résolu).",
         "info",
         "voyage",
         True,
