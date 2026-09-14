@@ -285,13 +285,13 @@ elles ne peuvent pas coexister** sans que deux écrans donnent deux réponses.
 
 | Bloc | Référence | Constat |
 |---|---|---|
-| **Base de décarbonation « nous-mêmes sans voiles »** | §11.2, hypothèse A9 | **Absent.** Aucune trace de `858 kW`, `212 g/kWh`, `4,37 t/j`, du facteur de route directe `1,211` ni d'une vitesse d'essai par navire (ANEMOS 11,36 / ARTEMIS 12,07 / ATLANTIS 11,86 kn). C'est le cœur du taux de décarbonation publiable — et le seul chiffre de comparaison que la méthodologie juge défendable. |
-| **Taux de décarbonation `%DR`** | §11.2 | **Absent**, corollaire du précédent. |
-| **Vitesse d'essai par navire** | §11.2 | **Aucun champ** au référentiel `Vessel`. La méthodologie insiste : les sisterships diffèrent de ~12 % en puissance à vitesse égale, et prendre ANEMOS pour toute la flotte flattait ARTEMIS de 2,6 points. |
-| **Travail de transport publié (t.km)** | §8.1, §9.1, annexe E | Calculé **en interne** comme dénominateur, jamais exposé comme grandeur. L'annexe E le liste pourtant parmi les champs publiés (`transport_work_mrv_t_km`, `transport_work_simulated_t_km`). |
-| **Simulation HVO** | §12 | **Absente.** `EmissionFactor` sait porter plusieurs carburants, mais aucune simulation de substitution (+25 % masse, périmètre WtW obligatoire des deux côtés). |
-| **Contrôles de vraisemblance du cargo MRV** | §8.3 | La règle « 0 sur lest » est implémentée. Les **deux garde-fous** ne le sont pas : cargo MRV **≥ cargo facturé**, et cargo MRV **≤ port en lourd (1 584,9 t)**. `Vessel.deadweight_t` existe ([vessel.py:123](../../app/models/vessel.py#L123)) mais n'est pas consommé par le moteur de règles. La méthodologie souligne que ces contrôles sont **les deux seules vérifications possibles à terre**, le calcul de déplacement n'existant qu'à bord. |
-| **Réconciliation THETIS-MRV** | §4.6 | L'escale est calculée mais n'est **jamais présentée comme ce qu'elle est** : l'écart qui explique pourquoi la valeur officielle THETIS-MRV sera **supérieure** aux deux intensités. Le §4.6 avertit que faute de le dire, un lecteur conclura à une incohérence ou à une sous-déclaration. |
+| **Base de décarbonation « nous-mêmes sans voiles »** | §11.2, hypothèse A9 | ✅ **Livré** (Lot 3, 2026-09-11) — `services/decarbonation.py`, vitesse d'essai par navire, branché au tableau de bord. |
+| **Taux de décarbonation `%DR`** | §11.2 | ✅ **Livré**, corollaire du précédent. |
+| **Vitesse d'essai par navire** | §11.2 | ✅ **Livré** — `Vessel.baseline_speed_kn`/`baseline_speed_source`, migration `20260911_0148`. |
+| **Travail de transport publié (t.km)** | §8.1, §9.1, annexe E | ✅ **Livré** (2026-09-14) — `LedgerResult.transport_work_mrv_t_km`/`.transport_work_simulated_t_km`, affichés page voyage/PDF/DOCX. |
+| **Simulation HVO** | §12 | **Toujours absente, par décision explicite.** La méthodologie elle-même bloque ce chiffre sur une réserve fournisseur non levée (§12.5) — l'implémenter produirait un écran dont la seule mention honnête serait « ne pas utiliser ». |
+| **Contrôles de vraisemblance du cargo MRV** | §8.3 | ✅ **Livré** (2026-09-14) — les deux volets (cargo MRV ≥ B/L, déjà codé mais mal cherché au premier passage ; cargo MRV ≤ port en lourd, `Vessel.deadweight_t`, réellement manquant) vivent désormais dans `validation_rules_catalog._r20_cargo_mrv` (R20), deux `CheckOutcome` indépendants. |
+| **Réconciliation THETIS-MRV** | §4.6 | ✅ **Déjà en place** (vérifié le 2026-09-14, ce constat était obsolète) — `staff/mrv/emissions.html` (`/mrv/emissions/port`) porte l'introduction et la bannière (`mrv_em_port_intro`, `mrv_em_scope_notice`) qui nomment explicitement l'écart avec THETIS-MRV, dans les 5 langues. |
 
 ---
 
