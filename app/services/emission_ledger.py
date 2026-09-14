@@ -318,22 +318,6 @@ class LedgerResult:
     # sous-estimé sous le nom d'une autre approche.
     co2_op_t: Decimal | None = None
 
-    # ── Assiette de l'approche MÉTIER : trajet + mouillage ───────────────
-    #
-    # 🔴 `co2_emitted_t` porte l'assiette **hors mouillage** : c'est le
-    # numérateur de l'approche MRV, et de lui seul. L'approche Métier et la
-    # lecture B/L prennent la consommation **berth-to-berth, mouillage inclus**
-    # (méthodologie v3.0 §1.2, §9.1, §10).
-    #
-    # Exposé plutôt que recalculé chez l'appelant : c'est le numérateur des
-    # méthodes A et B ci-dessous, et `kpi_env` en dérive le sien depuis le
-    # résumé persisté. Une seule définition, deux lecteurs.
-    #
-    # ``None`` = mouillage inconnu ⇒ méthodes A et B non calculables, jamais un
-    # repli silencieux sur l'assiette MRV, qui publierait un chiffre
-    # sous-estimé sous le nom d'une autre approche.
-    co2_op_t: Decimal | None = None
-
 
 # ════════════════════════════════════════════════════════════ Helpers datetime
 
@@ -796,22 +780,6 @@ async def compute_for_leg(
     co2eq_mouillage_t = (
         Decimal(em_mouillage["co2eq_t"]) if em_mouillage["co2eq_t"] is not None else None
     )
-
-    # Assiette MÉTIER (berth-to-berth) : trajet + mouillage.
-    #
-    # Deux provenances, deux lectures — les confondre fabriquerait un chiffre :
-    # en source ``events`` le mouillage est une somme d'intervalles, donc 0
-    # quand le navire n'a pas mouillé ; en repli ``legacy_noon`` il n'est pas
-    # séparable, et ``do_consumed`` est déjà un total indifférencié, donc
-    # berth-to-berth par construction.
-    if source == "events":
-        co2_op_t = (
-            (co2_emitted_t + co2_mouillage_t)
-            if (co2_emitted_t is not None and co2_mouillage_t is not None)
-            else None
-        )
-    else:
-        co2_op_t = co2_emitted_t
 
     # Assiette MÉTIER (berth-to-berth) : trajet + mouillage.
     #

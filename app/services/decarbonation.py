@@ -55,10 +55,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.models.vessel import Vessel
-
 # ════════════════════════════════════════════════ Constantes de classe (REF-07/08)
 
 #: Puissance propulsive installée — deux moteurs de 429 kW (REF-07 § 3.1.3.2).
@@ -203,15 +199,3 @@ def aggregate(inputs: list[VoyageInput], *, ghg_factor_t_per_t: Decimal) -> Deca
     if not usable:
         return DecarbonationResult(None, None, None, None, NA_NO_BASELINE_SPEED)
     return rate(baseline_total, actual_total)
-
-
-async def vessel_baseline_speed(db: AsyncSession, vessel_id: int | None) -> Decimal | None:
-    """Vitesse d'essai du navire, ou ``None`` — jamais un repli sur un autre.
-
-    Cf. :data:`NA_NO_BASELINE_SPEED` : substituer la vitesse d'un sistership
-    préjugerait auquel des deux le navire ressemble.
-    """
-    if vessel_id is None:
-        return None
-    vessel = await db.get(Vessel, vessel_id)
-    return getattr(vessel, "baseline_speed_kn", None) if vessel is not None else None
