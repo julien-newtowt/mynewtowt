@@ -61,6 +61,34 @@
         <input id="opex_daily_sea_eur" name="opex_daily_sea_eur" type="number" step="0.01" value="{{ vessel.opex_daily_sea_eur if vessel and vessel.opex_daily_sea_eur is not none else '' }}" />
       </div>
     </div>
+
+    <h2 class="h4 mt-5">Base de décarbonation « sans voiles »</h2>
+    <p class="text-muted text-sm">
+      Vitesse d'essai à 100&nbsp;% MCR du navire, propre à chaque coque&nbsp;:
+      les sisterships diffèrent d'environ 12&nbsp;% en puissance à vitesse
+      égale, et prendre la vitesse de l'un pour l'autre fausse son taux de
+      décarbonation de plusieurs points. Sans vitesse, le navire sort des deux
+      termes du calcul — jamais de repli sur un sistership.
+    </p>
+    <div class="grid grid-2 gap-4">
+      <div class="field">
+        <label for="baseline_speed_kn">Vitesse d'essai (kn)</label>
+        <input id="baseline_speed_kn" name="baseline_speed_kn" type="number" step="0.001" min="0" max="100"
+               value="{{ vessel.baseline_speed_kn if vessel and vessel.baseline_speed_kn is not none else '' }}" />
+        <small class="text-muted">Vider ce champ efface aussi la source.</small>
+      </div>
+      <div class="field">
+        <label for="baseline_speed_source">Source documentaire</label>
+        <input id="baseline_speed_source" name="baseline_speed_source" type="text" maxlength="120"
+               placeholder="REF-07 §3.1.3.3 — C413-1000-16 rev B, visé BV 23/07/2024"
+               value="{{ vessel.baseline_speed_source or '' if vessel else '' }}" />
+        <small class="text-muted">
+          Obligatoire dès qu'une vitesse est saisie : le document visé par la
+          société de classification d'où elle provient. Une vitesse sans source
+          ne vaut pas mieux que le chiffre qu'elle remplace.
+        </small>
+      </div>
+    </div>
     <div class="flex gap-2 mt-4">
       <button type="submit" class="btn btn-primary">Enregistrer</button>
       <a href="/admin/vessels" class="btn btn-ghost">Annuler</a>

@@ -521,3 +521,73 @@ SELECT code, imo_number, baseline_speed_kn FROM vessels;
 
 Les trois navires en service doivent porter une vitesse. À défaut, le taux de
 décarbonation retombera sur une absence motivée, sans que rien ne le signale.
+
+### Suite — le seed n'avait rattaché aucun navire en production
+
+**Ce que le contrôle a montré.** Le `SELECT` de contrôle, joué sur la production
+le 17/09, renvoie quatre navires portant `9123456` → `9123459` — les IMO de
+remplissage de `scripts/seed_demo.py` — et `baseline_speed_kn` à `NULL` partout.
+Les colonnes existent : `0148` **est appliquée**. Elle a donc réussi en écrivant
+**zéro ligne**, exactement le scénario que son propre docstring annonçait.
+
+Corollaire à énoncer clairement : la révision n'est plus corrigeable sur place.
+Elle porte désormais une histoire partagée, et surtout **elle ne se rejouera
+pas** — la réparation ne peut pas venir d'elle.
+
+**Portée réelle, bien au-delà de la vitesse d'essai.** `imo_number` n'est pas un
+champ d'agrément : il est imprimé sur les datasets réglementaires **OVDLA /
+OVDBR** (`services/mrv_dataset.py`), le **Bill of Lading** (PDF et DOCX), la
+**liste d'équipage PAF**, le **certificat Anemos**, les **SOF** bord et escale,
+le **plan de chargement** et la **page publique** d'un voyage. Des IMO de
+remplissage en production sont un défaut de donnée à traiter pour lui-même.
+
+**Le manque structurel.** `baseline_speed_kn` décide d'un chiffre publiable et
+n'avait **qu'un seul écrivain** : une migration non rejouable. Aucune voie de
+correction applicative n'existait — alors même que le modèle anticipait la
+correction manuelle, puisque `baseline_speed_source` n'a de sens que pour la
+tracer.
+
+**Deux corrections, livrées ensemble.**
+
+1. **Admin → Flotte saisit la vitesse d'essai et sa source.** Une vitesse **sans
+   source est refusée** (400) : toute la valeur de la base de décarbonation tient
+   à ce qu'aucun de ses paramètres ne soit une hypothèse interne, et ouvrir la
+   saisie manuelle sans cette garde ferait de l'écran le trou par lequel une
+   hypothèse entre dans un chiffre publiable. Vider la vitesse efface la source
+   (une source orpheline décrirait une valeur qui n'existe plus). Parsing par
+   `utils.decimals` — `Decimal("nan")` est un littéral valide, et PostgreSQL
+   l'accepte en `numeric`. La liste des navires **nomme** l'absence (« non
+   renseignée ») au lieu d'un tiret qui se lirait comme un zéro — même règle que
+   `schengen_status = 'indetermine'` et que le « — » de `cost_rate`.
+2. **`0148` refuse désormais un seed sans effet.** La garde distingue les deux
+   cas à zéro ligne, et c'est toute sa difficulté : table `vessels` **vide** =
+   rien à rattacher (base neuve, chaîne CI, navires créés plus tard) ⇒ on passe ;
+   table **non vide** et aucun rattachement ⇒ `RuntimeError` nommant les IMO
+   attendus, ceux réellement en base, et où corriger. Un rattachement **partiel**
+   passe (ATLANTIS peut n'être pas encore créé).
+
+⚠️ **La garde arrive trop tard pour la production, et il faut le dire :** la
+révision y est déjà appliquée, donc elle ne se rejouera pas. Elle protège les
+bases neuves et sert de patron à la prochaine migration de seed. La réparation
+de la production passe par l'écran, pas par la migration.
+
+**Procédure de réparation en production** (Admin → Flotte, tracée dans
+`activity_logs` — ce qu'un `UPDATE` direct ne serait pas) :
+
+1. Corriger les IMO des trois navires en service : ANEMOS `9982938`,
+   ARTEMIS `9983798`, ATLANTIS `1094917`.
+2. Saisir la vitesse d'essai et sa source : 11,360 / 12,070 / 11,860 kn,
+   sources REF-07 §3.1.3.3, REF-08 §3.1.3.3, courbe de classe.
+3. Vérifier que la liste des navires n'affiche plus « non renseignée » pour les
+   trois navires en service.
+
+**Vérifications.** Garde éprouvée sur PostgreSQL 16 dans ses trois états : base
+vide → passe (exit 0) ; IMO officiels → sème 11.360 / 12.070 / 11.860 et passe ;
+IMO de remplissage → lève en nommant attendus et trouvés. 6 tests neufs (4 sur la
+garde, dont le cas « base vide » qu'une garde naïve casserait ; 6 sur l'écran,
+dont le refus d'une vitesse sans source et le rejet de `nan` / `Infinity`), et
+`test_admin_reprise` complété plutôt qu'amolli. Suite complète : **3512 passés**.
+
+**Reste ouvert.** Le tableau de bord de décarbonation exclut un navire sans
+vitesse d'essai — l'écran dit-il *pourquoi* ? Non vérifié ici. À instruire
+séparément : c'est le même motif d'absence nommée, sur une autre surface.

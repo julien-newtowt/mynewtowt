@@ -12,7 +12,7 @@
 
 <article class="card">
   <table class="data-table">
-    <thead><tr><th>Code</th><th>Nom</th><th>Classe</th><th>IMO</th><th>Pavillon</th><th>Capacité</th><th>Vitesse</th><th>OPEX/j</th><th>Statut</th><th></th></tr></thead>
+    <thead><tr><th>Code</th><th>Nom</th><th>Classe</th><th>IMO</th><th>Pavillon</th><th>Capacité</th><th>Vitesse</th><th>Vitesse d'essai</th><th>OPEX/j</th><th>Statut</th><th></th></tr></thead>
     <tbody>
       {% for v in vessels %}
       <tr>
@@ -23,6 +23,13 @@
         <td>{% if v.flag %}<span class="port-badge">{{ v.flag|flag }} {{ v.flag }}</span>{% else %}—{% endif %}</td>
         <td>{{ v.capacity_palettes }} pal.</td>
         <td>{{ v.default_speed_kn }} kn</td>
+        <td class="mono text-sm">
+          {%- if v.baseline_speed_kn is not none -%}
+            <span title="{{ v.baseline_speed_source or 'source non renseignée' }}">{{ v.baseline_speed_kn }} kn</span>
+          {%- else -%}
+            <span class="pill pill-warn" title="Sans vitesse d'essai, ce navire est exclu du taux de décarbonation.">non renseignée</span>
+          {%- endif -%}
+        </td>
         <td class="mono">{{ '%.0f €'|format(v.opex_daily_sea_eur) if v.opex_daily_sea_eur else '—' }}</td>
         <td>{% if v.is_active %}<span class="pill pill-ok">Actif</span>{% else %}<span class="pill pill-neutral">Inactif</span>{% endif %}</td>
         <td class="flex gap-1">
@@ -34,7 +41,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="10" class="text-muted text-center">Aucun navire.</td></tr>
+      <tr><td colspan="11" class="text-muted text-center">Aucun navire.</td></tr>
       {% endfor %}
     </tbody>
   </table>

@@ -36,14 +36,25 @@ instantané, jamais un appel au code vivant.
 Idempotente : ne sème que les lignes dont la vitesse est encore ``NULL``, donc
 n'écrase jamais une valeur corrigée à la main.
 
-⚠️ **Le seed peut ne rien toucher, et il le fera en silence.** Le rattachement
-se fait par ``imo_number``, colonne ``String(20)`` **libre et nullable** :
-rien dans le dépôt ne crée les navires en production, donc le format qui y est
-réellement stocké n'est pas vérifiable d'ici. Si la production écrivait
-``IMO 9982938``, ou si ATLANTIS n'est pas encore créé, l'``UPDATE`` ne
-toucherait rien et la migration réussirait quand même — le taux de
-décarbonation retomberait alors sur une absence motivée sans qu'on sache
-pourquoi.
+🔴 **Le seed n'a rien touché en production, et c'est arrivé en silence.**
+L'avertissement que portait cette révision (« le seed peut ne rien toucher »)
+s'est vérifié le 17/09/2026 : la production porte les IMO de remplissage de
+``scripts/seed_demo.py`` (``9123456`` → ``9123459``), aucun ne correspond aux
+numéros officiels ci-dessus. Les trois ``UPDATE`` ont donc touché **zéro
+ligne**, la migration a réussi, et rien nulle part n'a dit que la flotte
+n'avait pas été semée.
+
+D'où la garde ``_assert_seed_reached_the_fleet`` ci-dessous : une table
+``vessels`` **non vide** dont aucune ligne ne correspond est un échec, pas un
+no-op. Une table **vide** reste légitime (base neuve, chaîne CI, navires créés
+plus tard) et passe sans bruit — c'est la distinction qui rend la garde
+utilisable.
+
+⚠️ **Cette garde arrive trop tard pour la production, et il faut le savoir :**
+la révision y est déjà appliquée, donc elle ne se rejouera pas. La réparation
+passe par **Admin → Flotte** (IMO puis vitesse d'essai, tracés dans
+``activity_logs``), pas par un nouveau passage de cette migration. La garde
+protège les bases neuves et sert de patron à la prochaine migration de seed.
 
 **Contrôle post-migration obligatoire** : ``SELECT code, imo_number,
 baseline_speed_kn FROM vessels`` — les trois navires en service doivent
@@ -96,12 +107,45 @@ _BASELINE_SEED: tuple[tuple[str, Decimal, str], ...] = (
 )
 
 
+def _assert_seed_reached_the_fleet(
+    vessel_count: int, updated: int, present_imos: tuple[str, ...] = ()
+) -> None:
+    """Refuse un seed qui n'a rattaché aucune ligne d'une flotte existante.
+
+    Les deux cas à zéro ligne écrite n'ont pas le même sens, et c'est toute la
+    difficulté :
+
+    - ``vessel_count == 0`` — il n'y a **rien à rattacher**. Base neuve, chaîne
+      CI, navires créés plus tard par un opérateur. Légitime : on passe.
+    - ``vessel_count > 0`` et ``updated == 0`` — des navires existent et
+      **aucun** ne correspond. Le référentiel de rattachement est en défaut :
+      c'est l'échec qu'on veut voir, pas un no-op.
+
+    Une correspondance **partielle** (``updated > 0``) passe : ATLANTIS peut
+    n'être pas encore créé au moment où la migration s'applique.
+    """
+    if vessel_count and not updated:
+        attendus = ", ".join(imo for imo, _, _ in _BASELINE_SEED)
+        trouves = ", ".join(present_imos) or "aucun imo_number renseigné"
+        raise RuntimeError(
+            f"Seed de vitesse d'essai sans effet : {vessel_count} navire(s) en base, "
+            "aucun ne porte l'un des IMO attendus.\n"
+            f"  IMO attendus : {attendus}\n"
+            f"  IMO en base  : {trouves}\n"
+            "Corriger les numéros IMO dans Admin → Flotte (l'IMO est l'identifiant "
+            "officiel, celui de la fiche THETIS-MRV), puis rejouer la migration. "
+            "Sans vitesse d'essai, les navires sortent du taux de décarbonation."
+        )
+
+
 def upgrade() -> None:
     op.add_column("vessels", sa.Column("baseline_speed_kn", sa.Numeric(6, 3), nullable=True))
     op.add_column("vessels", sa.Column("baseline_speed_source", sa.String(120), nullable=True))
 
+    bind = op.get_bind()
+    updated = 0
     for imo, speed, source in _BASELINE_SEED:
-        op.execute(
+        result = bind.execute(
             sa.text(
                 "UPDATE vessels SET baseline_speed_kn = :speed, baseline_speed_source = :source "
                 "WHERE imo_number = :imo AND baseline_speed_kn IS NULL"
@@ -115,6 +159,16 @@ def upgrade() -> None:
                 sa.bindparam("imo", imo, type_=sa.String(20)),
             )
         )
+        updated += result.rowcount or 0
+
+    vessel_count = bind.execute(sa.text("SELECT COUNT(*) FROM vessels")).scalar() or 0
+    present = tuple(
+        row[0]
+        for row in bind.execute(
+            sa.text("SELECT imo_number FROM vessels WHERE imo_number IS NOT NULL ORDER BY code")
+        )
+    )
+    _assert_seed_reached_the_fleet(vessel_count, updated, present)
 
 
 def downgrade() -> None:
