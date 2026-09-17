@@ -441,8 +441,12 @@ def _apply_vessel_form(
     default_speed_kn: str | None,
     default_elongation: str | None,
     opex_daily_sea_eur: str | None,
-    baseline_speed_kn: str | None = None,
-    baseline_speed_source: str | None = None,
+    # Sans défaut, comme tous les champs ci-dessus : un appelant qui les
+    # omettrait remettrait `baseline_speed_kn` à NULL — donc sortirait le
+    # navire du taux de décarbonation — en silence. L'absence de défaut en
+    # fait une erreur d'appel, pas un effacement muet.
+    baseline_speed_kn: str | None,
+    baseline_speed_source: str | None,
 ) -> None:
     vessel.name = name.strip()
     vessel.vessel_class = (vessel_class or "phoenix").strip() or "phoenix"
