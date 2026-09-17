@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
@@ -39,6 +40,8 @@ async def test_vessel_create_edit_toggle(db, staff_user):
         default_speed_kn="8.5",
         default_elongation="1.2",
         opex_daily_sea_eur="9000",
+        baseline_speed_kn="12.070",
+        baseline_speed_source="REF-08 §3.1.3.3 — C432-1000-16 rev B, visé BV 22/07/2024",
         db=db,
         user=staff_user,
     )
@@ -48,6 +51,9 @@ async def test_vessel_create_edit_toggle(db, staff_user):
     assert v.flag == "FR"
     assert v.capacity_palettes == 850
     assert float(v.default_speed_kn) == 8.5
+    # Vitesse d'essai : Decimal exact (colonne Numeric(6, 3)), et sa source.
+    assert v.baseline_speed_kn == Decimal("12.070")
+    assert v.baseline_speed_source.startswith("REF-08")
 
     await vessel_edit(
         v.id,
@@ -61,11 +67,14 @@ async def test_vessel_create_edit_toggle(db, staff_user):
         default_speed_kn="9",
         default_elongation="1.15",
         opex_daily_sea_eur="9500",
+        baseline_speed_kn="12.070",
+        baseline_speed_source="REF-08 §3.1.3.3 — C432-1000-16 rev B, visé BV 22/07/2024",
         db=db,
         user=staff_user,
     )
     obj = await db.get(Vessel, v.id)
     assert obj.name == "Artemis II" and obj.capacity_palettes == 900
+    assert obj.baseline_speed_kn == Decimal("12.070")
 
     assert obj.is_active is True
     await vessel_toggle_active(v.id, _Req(), db=db, user=staff_user)

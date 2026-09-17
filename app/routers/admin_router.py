@@ -54,6 +54,7 @@ from app.services import referential_env
 from app.services.activity import record as activity_record
 from app.templating import templates
 from app.utils import marad, pipedrive
+from app.utils.decimals import QTY_STEP, DecimalInputError, parse_decimal
 
 router = APIRouter(prefix="/admin", tags=["admin-enriched"])
 
@@ -376,6 +377,58 @@ def _vessel_float(value: str | None) -> float | None:
         raise HTTPException(status_code=400, detail="valeur numérique invalide") from exc
 
 
+# Borne de garde de la vitesse d'essai. Elle n'exprime aucune règle métier — la
+# flotte tourne autour de 11-12 nœuds — elle écarte la faute de frappe et
+# protège la colonne ``Numeric(6, 3)`` d'un débordement.
+_BASELINE_SPEED_MAX = Decimal("100")
+
+
+def parse_baseline_speed(
+    raw_speed: str | None, raw_source: str | None
+) -> tuple[Decimal | None, str | None]:
+    """Valide le couple vitesse d'essai / source documentaire.
+
+    🔴 **Une vitesse sans source est refusée.** Ce n'est pas une coquetterie de
+    formulaire : toute la valeur de la base de décarbonation « nous-mêmes sans
+    voiles » tient à ce qu'aucun de ses paramètres ne soit une hypothèse
+    interne — chacun vient d'un document visé par une société de classification
+    (méthodologie §11.2, hypothèse A9). Le modèle le dit déjà
+    (``Vessel.baseline_speed_source``, « une vitesse sans source ne vaut pas
+    mieux que le chiffre qu'elle remplace ») ; l'écran doit le faire respecter,
+    sans quoi la saisie manuelle qu'on vient d'ouvrir devient le trou par lequel
+    une hypothèse interne entre dans un chiffre publiable.
+
+    Vitesse vide ⇒ **les deux** champs sont remis à ``NULL`` : une source
+    orpheline décrirait une valeur qui n'existe plus.
+    """
+    speed_text = (raw_speed or "").strip()
+    source = (raw_source or "").strip() or None
+
+    if not speed_text:
+        return None, None
+
+    try:
+        speed = parse_decimal(speed_text, label="vitesse d'essai", quantize=QTY_STEP)
+    except DecimalInputError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if speed <= 0 or speed >= _BASELINE_SPEED_MAX:
+        raise HTTPException(
+            status_code=400,
+            detail="Vitesse d'essai hors bornes (attendu : entre 0 et 100 nœuds).",
+        )
+    if source is None:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Vitesse d'essai refusée sans sa source documentaire : "
+                "indiquer le fichier EEDI visé (ex. « REF-07 §3.1.3.3 — "
+                "C413-1000-16 rev B, visé BV 23/07/2024 »)."
+            ),
+        )
+    return speed, source[:120]
+
+
 def _apply_vessel_form(
     vessel: Vessel,
     *,
@@ -388,6 +441,8 @@ def _apply_vessel_form(
     default_speed_kn: str | None,
     default_elongation: str | None,
     opex_daily_sea_eur: str | None,
+    baseline_speed_kn: str | None = None,
+    baseline_speed_source: str | None = None,
 ) -> None:
     vessel.name = name.strip()
     vessel.vessel_class = (vessel_class or "phoenix").strip() or "phoenix"
@@ -404,6 +459,9 @@ def _apply_vessel_form(
     if elong is not None:
         vessel.default_elongation = elong
     vessel.opex_daily_sea_eur = _vessel_float(opex_daily_sea_eur)
+    vessel.baseline_speed_kn, vessel.baseline_speed_source = parse_baseline_speed(
+        baseline_speed_kn, baseline_speed_source
+    )
 
 
 @router.get("/vessels", response_class=HTMLResponse)
@@ -444,6 +502,8 @@ async def vessel_create(
     default_speed_kn: str | None = Form(None),
     default_elongation: str | None = Form(None),
     opex_daily_sea_eur: str | None = Form(None),
+    baseline_speed_kn: str | None = Form(None),
+    baseline_speed_source: str | None = Form(None),
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("admin", "M")),
 ):
@@ -467,6 +527,8 @@ async def vessel_create(
         default_speed_kn=default_speed_kn,
         default_elongation=default_elongation,
         opex_daily_sea_eur=opex_daily_sea_eur,
+        baseline_speed_kn=baseline_speed_kn,
+        baseline_speed_source=baseline_speed_source,
     )
     db.add(vessel)
     await db.flush()
@@ -515,6 +577,8 @@ async def vessel_edit(
     default_speed_kn: str | None = Form(None),
     default_elongation: str | None = Form(None),
     opex_daily_sea_eur: str | None = Form(None),
+    baseline_speed_kn: str | None = Form(None),
+    baseline_speed_source: str | None = Form(None),
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission("admin", "M")),
 ):
@@ -532,6 +596,8 @@ async def vessel_edit(
         default_speed_kn=default_speed_kn,
         default_elongation=default_elongation,
         opex_daily_sea_eur=opex_daily_sea_eur,
+        baseline_speed_kn=baseline_speed_kn,
+        baseline_speed_source=baseline_speed_source,
     )
     await db.flush()
     await activity_record(
