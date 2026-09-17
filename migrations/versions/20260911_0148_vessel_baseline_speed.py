@@ -53,6 +53,8 @@ Revision ID: 20260911_0148
 Revises: 20260911_0147
 """
 
+from decimal import Decimal
+
 from alembic import op
 import sqlalchemy as sa
 
@@ -61,11 +63,36 @@ down_revision = "20260911_0147"
 branch_labels = None
 depends_on = None
 
-# (imo_number, vitesse d'essai en nœuds, source documentaire)
-_BASELINE_SEED: tuple[tuple[str, str, str], ...] = (
-    ("9982938", "11.360", "REF-07 §3.1.3.3 — C413-1000-16 rev B, vise BV 23/07/2024 (mesure)"),
-    ("9983798", "12.070", "REF-08 §3.1.3.3 — C432-1000-16 rev B, vise BV 22/07/2024 (courbe R2 0,995)"),
-    ("1094917", "11.860", "Courbe de classe P=5,151V^2,068 sur REF-07+REF-08 — fichier propre attendu"),
+# 🔴 La vitesse est un ``Decimal``, jamais une chaîne — et son paramètre porte
+# son type explicitement (``sa.Numeric(6, 3)``).
+#
+# C'est le défaut qui a mis ce déploiement à terre le 17/09/2026. Un
+# ``bindparams(speed="11.360")`` laisse SQLAlchemy déduire le type du type
+# Python de la valeur : ``str`` ⇒ ``String``. asyncpg rend alors le paramètre
+# ``$1::VARCHAR``, et PostgreSQL refuse d'affecter un ``character varying`` à
+# une colonne ``numeric`` (aucune conversion implicite en contexte
+# d'affectation) : ``DatatypeMismatchError``.
+#
+# ⚠️ **L'échec est à la préparation de la requête, pas à son exécution** : il
+# ne dépend d'aucune donnée et se produit même sur une table ``vessels``
+# vide. Il est donc certain sur toute base PostgreSQL — et invisible partout
+# où le moteur est typé dynamiquement.
+_BASELINE_SEED: tuple[tuple[str, Decimal, str], ...] = (
+    (
+        "9982938",
+        Decimal("11.360"),
+        "REF-07 §3.1.3.3 — C413-1000-16 rev B, vise BV 23/07/2024 (mesure)",
+    ),
+    (
+        "9983798",
+        Decimal("12.070"),
+        "REF-08 §3.1.3.3 — C432-1000-16 rev B, vise BV 22/07/2024 (courbe R2 0,995)",
+    ),
+    (
+        "1094917",
+        Decimal("11.860"),
+        "Courbe de classe P=5,151V^2,068 sur REF-07+REF-08 — fichier propre attendu",
+    ),
 )
 
 
@@ -78,7 +105,15 @@ def upgrade() -> None:
             sa.text(
                 "UPDATE vessels SET baseline_speed_kn = :speed, baseline_speed_source = :source "
                 "WHERE imo_number = :imo AND baseline_speed_kn IS NULL"
-            ).bindparams(speed=speed, source=source, imo=imo)
+            ).bindparams(
+                # Type explicite : il décide du cast rendu au pilote. Le
+                # déduire de la valeur Python suffit ici (un ``Decimal`` donne
+                # déjà ``NUMERIC``), mais le dire supprime la dépendance au
+                # type de la constante — c'est elle qui a cédé.
+                sa.bindparam("speed", speed, type_=sa.Numeric(6, 3)),
+                sa.bindparam("source", source, type_=sa.String(120)),
+                sa.bindparam("imo", imo, type_=sa.String(20)),
+            )
         )
 
 

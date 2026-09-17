@@ -94,6 +94,38 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
             libpango-1.0-0 libpangoft2-1.0-0 libcairo2 libgdk-pixbuf-2.0-0 libffi-dev shared-mime-info
+      # 🔴 La chaîne Alembic jouée POUR DE VRAI, sur PostgreSQL, de `base` à
+      # `head` — exactement ce que fait `scripts/deploy.sh` (`alembic upgrade
+      # head`).
+      #
+      # Sans cette étape, AUCUNE migration n'était jamais exécutée en CI : la
+      # suite de tests construit son schéma par `Base.metadata.create_all` sur
+      # **SQLite en mémoire** (`tests/integration/conftest.py`), et le service
+      # PostgreSQL ci-dessus ne servait qu'à satisfaire la configuration. Le
+      # corps d'une migration n'était donc relu par personne avant la
+      # production.
+      #
+      # C'est ce trou qui a mis le déploiement du 17/09/2026 à terre
+      # (`20260911_0148`) : un paramètre lié en `str` était rendu `$1::VARCHAR`
+      # face à une colonne `numeric`, et PostgreSQL refusait l'affectation.
+      # SQLite, typé dynamiquement, l'aurait accepté sans broncher — le défaut
+      # était structurellement invisible à la suite de tests, quelle qu'en soit
+      # la couverture.
+      #
+      # Base dédiée : la chaîne ne doit pas entrer en concurrence avec le
+      # schéma `create_all` de la suite de tests.
+      #
+      # ⚠️ Ce que cette étape ne dit PAS : elle part d'une base VIDE. Une
+      # migration correcte sur base neuve peut encore échouer sur les données
+      # réelles de la production (cf. `DFT-20260904-001`). Elle couvre le SQL,
+      # pas les données.
+      - name: Chaîne Alembic sur PostgreSQL (base → head)
+        env:
+          DATABASE_URL: postgresql+asyncpg://towt:change_me_local@localhost:5432/towt_migrations
+          PGPASSWORD: change_me_local
+        run: |
+          psql -h localhost -U towt -d postgres -c 'CREATE DATABASE towt_migrations'
+          alembic upgrade head
       # tests/integration (110 fichiers) et tests/regression (4 fichiers, dont
       # la sentinelle des facteurs d'émission et le filet de parité V2↔V3)
       # n'étaient pas exécutés en CI : 29 échecs y vivaient invisibles, dont un

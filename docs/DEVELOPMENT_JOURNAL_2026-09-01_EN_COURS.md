@@ -416,3 +416,108 @@ reprise, un plafond d'affichage, une asymétrie de rendu.
 Julien. Chaque tour supplémentaire coûte un cycle complet et produit surtout de
 la retouche de surface ; le risque résiduel est mieux traité par un œil humain
 sur la présentation d'un chiffre réglementaire que par un 9ᵉ tour.
+
+## 2026-09-17 — Déploiement à terre sur `20260911_0148` : un paramètre lié en `str`
+
+### Situation
+
+Le déploiement de la dernière PR s'arrête à la troisième migration de la série.
+`scripts/deploy.sh` restaure le snapshot `pre-f0a6b98-20260917T064312Z.dump` et
+sort en erreur. **La production est donc revenue à `20260907_0145`** : les trois
+migrations `0146`, `0147` et `0148` ont été annulées avec la restauration, et
+aucune n'est appliquée.
+
+```
+asyncpg.exceptions.DatatypeMismatchError: column "baseline_speed_kn" is of type
+numeric but expression is of type character varying
+[SQL: UPDATE vessels SET baseline_speed_kn = $1::VARCHAR ...]
+```
+
+### Cause racine
+
+Le seed de `20260911_0148` liait ses valeurs ainsi :
+
+```python
+_BASELINE_SEED = (("9982938", "11.360", "REF-07 …"), …)
+...
+sa.text("UPDATE vessels SET baseline_speed_kn = :speed …").bindparams(speed=speed, …)
+```
+
+La vitesse est une **chaîne**. `bindparams(speed="11.360")` laisse SQLAlchemy
+déduire le type du type Python de la valeur : `str` ⇒ `String`. Le pilote
+asyncpg rend alors le paramètre `$1::VARCHAR`, et PostgreSQL refuse d'affecter
+un `character varying` à une colonne `numeric` — il n'existe aucune conversion
+implicite en **contexte d'affectation** (la même valeur passerait dans un
+`WHERE`, ce qui rend le piège d'autant moins visible).
+
+L'écriture des valeurs en chaîne était **délibérée et correcte** : c'est ainsi
+qu'on fige `11.360` sans passer par un flottant. Ce qui manquait n'est pas la
+constante, c'est le **type du paramètre**.
+
+### Ce qu'il faut en retenir : le défaut ne dépendait d'aucune donnée
+
+L'échec se produit à la **préparation** de la requête, pas à son exécution :
+reproduit ici sur une table `vessels` **vide**, chaîne complète depuis `base`.
+Il était donc **certain** sur toute base PostgreSQL — ni intermittent, ni lié à
+l'état de la production, ni au format réel des `imo_number` (l'avertissement que
+porte le docstring de la migration sur un seed qui ne toucherait rien est un
+*autre* sujet, toujours ouvert).
+
+### Pourquoi la CI ne pouvait pas le voir
+
+**Aucune migration n'était jamais exécutée en CI.** Le job `test` provisionne
+bien un service PostgreSQL 16, mais la suite construit son schéma par
+`Base.metadata.create_all` sur **SQLite en mémoire**
+(`tests/integration/conftest.py`) ; le service ne servait qu'à satisfaire la
+configuration. Le corps d'une migration n'était relu par personne avant la
+production — et SQLite, typé dynamiquement, aurait accepté cette affectation
+sans broncher. Aucune couverture de tests, si large soit-elle, ne pouvait
+rattraper cela.
+
+La sentinelle `test_alembic_single_head.py` lit le **graphe** sans ouvrir de
+connexion : elle couvre le chaînage, jamais le SQL.
+
+### Correctif
+
+1. **`20260911_0148`** — valeurs en `Decimal`, et paramètres **typés
+   explicitement** (`sa.bindparam("speed", …, type_=sa.Numeric(6, 3))`). Le
+   `Decimal` seul suffirait ; le type explicite supprime la dépendance au type
+   de la constante, qui est ce qui a cédé. Révision **corrigée sur place** : elle
+   n'a jamais été appliquée nulle part (la transaction a échoué, le snapshot a
+   été restauré), donc aucun environnement n'est à re-chaîner et l'identifiant
+   de révision ne bouge pas.
+2. **CI — chaîne Alembic jouée pour de vrai** (`.github/workflows/ci.yml`, job
+   `test`) : `alembic upgrade head` de `base` à `head` sur le service
+   PostgreSQL, base dédiée `towt_migrations`, exactement ce que fait
+   `scripts/deploy.sh`. C'est la correction de la **classe** de défaut, pas de
+   ce seul cas : tout défaut SQL dans un corps de migration échoue désormais en
+   CI plutôt qu'en déploiement.
+
+⚠️ **Ce que cette étape ne couvre pas** : elle part d'une base **vide**. Une
+migration correcte sur base neuve peut encore échouer sur les données réelles
+de la production — c'est exactement `DFT-20260904-001`, où la base reconstruite
+était juste et la production seule divergeait. Elle couvre le SQL, pas les
+données.
+
+### Vérifications
+
+- Défaut **reproduit** sur PostgreSQL 16 local, chaîne complète depuis `base`,
+  table `vessels` vide → même `DatatypeMismatchError`, même SQL `$1::VARCHAR`.
+- Après correctif : `alembic upgrade head` de `base` à `head` **passe** (exit 0).
+- `downgrade -1` puis `upgrade head` avec les trois navires en base → les trois
+  vitesses sont écrites à la précision attendue (11.360 / 12.070 / 11.860) et la
+  colonne est bien `numeric(6,3)`.
+- Les commandes exactes de la nouvelle étape CI rejouées localement (création de
+  la base dédiée + `alembic upgrade head`) → exit 0.
+
+### Contrôle post-déploiement, toujours obligatoire
+
+Le docstring de la migration le demandait déjà et **cela reste vrai** — la
+correction de type ne garantit pas que le seed touche quelque chose :
+
+```sql
+SELECT code, imo_number, baseline_speed_kn FROM vessels;
+```
+
+Les trois navires en service doivent porter une vitesse. À défaut, le taux de
+décarbonation retombera sur une absence motivée, sans que rien ne le signale.
