@@ -379,13 +379,29 @@ async def test_b_issued_certificate_is_never_recalculated(db):
 
 
 def test_b_certificate_template_prefers_stored_record():
-    """Le template PDF privilégie ``certificate.*`` (le recalcul n'est qu'un fallback)."""
+    """Le gabarit PDF privilégie ``certificate.*`` — et ne porte plus d'allégation.
+
+    🔴 Ce test exigeait la présence de ``certificate.co2_avoided_kg``. Il exige
+    désormais son ABSENCE : le certificat ne compare plus nos émissions à un
+    porte-conteneurs conventionnel à 13,7 gCO₂/t·km, base écartée par la
+    méthodologie de performance environnementale v3.0 (§11.1) et non
+    substantiable au sens de la directive (UE) 2024/825.
+
+    Ce qui reste vérifié est inchangé : le gabarit lit l'enregistrement
+    persisté plutôt que de recalculer, pour les grandeurs **mesurées**.
+    """
     from app.templating import templates
 
     src = templates.env.loader.get_source(templates.env, "pdf/anemos_certificate.html")[0]
-    assert "certificate.co2_avoided_kg if certificate" in src
     assert "certificate.co2_emitted_kg if certificate" in src
     assert "certificate.distance_nm if certificate" in src
+    # Le contrefactuel ne doit plus etre lu NI rendu. On ignore les commentaires
+    # Jinja, qui expliquent precisement ce qui a ete retire.
+    body = chr(10).join(
+        line for line in src.splitlines() if not line.lstrip().startswith(("{#", "#"))
+    )
+    for banned in ("co2_avoided_kg", "co2_conventional_kg", "co2_conv_kg"):
+        assert banned not in body, banned
 
 
 # ═══════════════════ (c) Compteur landing = Σ co2_avoided_kg des certificats
@@ -421,8 +437,20 @@ async def test_c_landing_counter_is_sum_of_certificates(db):
 
     social_proof.invalidate_counters_cache()
     counters = await social_proof.counters(db)
-    # Σ = 3000,75 kg → int (arrondi plancher historique du compteur).
-    assert counters.co2_avoided_kg == 3000
+    # 🔴 Le compteur d'« émissions évitées » de la vitrine est RETIRÉ.
+    #
+    # Ce test vérifiait qu'il sommait bien les certificats (3 000 kg ici). Il
+    # vérifie désormais l'inverse, et c'est un durcissement : agréger en
+    # compteur de page d'accueil un contrefactuel calculé contre un
+    # porte-conteneurs à 13,7 gCO₂/t·km en faisait la forme la plus visible
+    # d'une allégation dont la base a été écartée (méthodologie v3.0 §11.1).
+    #
+    # Les certificats ci-dessus portent volontairement des valeurs non nulles :
+    # le compteur doit rester à zéro MÊME quand la donnée existe en base. Un
+    # simple « pas de certificat, donc zéro » ne prouverait rien.
+    assert counters.co2_avoided_kg == 0
+    # …et les deux compteurs de FAITS restent servis.
+    assert counters.crossings >= 0
     social_proof.invalidate_counters_cache()
 
 

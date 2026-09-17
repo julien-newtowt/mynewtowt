@@ -35,7 +35,6 @@ from app.models.vessel import Vessel
 from app.models.voyage_emission_summary import VoyageEmissionSummary
 from app.services.kpi_env import (
     DASHBOARD_PARAM_DEFAULTS,
-    NA_BALLAST,
     NA_CARGO_MRV,
     NA_NO_LADEN_VOYAGE,
     AvoidedResult,
@@ -66,6 +65,11 @@ LEG_LADEN = LegEmissionRecord(
     etd=datetime(2026, 1, 5, tzinfo=UTC),
     ata=datetime(2026, 1, 25, tzinfo=UTC),
     has_kpi=True,
+    # Aucun mouillage sur ce voyage : l'assiette Métier (berth-to-berth) est
+    # donc EGALE a l'assiette MRV (hors mouillage). Declare explicitement — un
+    # `co2_op_t` absent signifie « mouillage inconnu », pas « pas de mouillage »,
+    # et rendrait les methodes A et B non calculables.
+    co2_op_t=Decimal("50"),
 )
 
 # Voyage 2 — sur lest : cargo nul, 800 nm, 30 t CO2 émis (le navire consomme
@@ -80,6 +84,39 @@ LEG_BALLAST = LegEmissionRecord(
     etd=datetime(2026, 2, 1, tzinfo=UTC),
     ata=datetime(2026, 2, 18, tzinfo=UTC),
     has_kpi=True,
+    co2_op_t=Decimal("30"),  # sans mouillage : Metier = MRV (cf. LEG_LADEN)
+)
+
+# Voyage 3 — cargo MRV saisi (500 t), CO2 MRV PAS ENCORE calculé : exactement
+# la forme que produit `_emissions_provider` quand `summary.co2_t is None`
+# (`has_kpi=False`, `co2_emitted_t` ramené à 0 pour ne jamais faire échouer un
+# `sum()`). Sert à `test_aggregate_ef_method_c_excludes_unknown_co2_from_denominator`.
+LEG_C_KNOWN = LegEmissionRecord(
+    leg_id=3,
+    leg_code="1CFRBR6",
+    vessel_id=1,
+    co2_emitted_t=Decimal("50"),
+    cargo_t=Decimal("500"),
+    distance_nm=Decimal("1000"),
+    etd=datetime(2026, 3, 1, tzinfo=UTC),
+    ata=datetime(2026, 3, 20, tzinfo=UTC),
+    has_kpi=True,
+    cargo_mrv_t=Decimal("500"),
+    co2_op_t=Decimal("50"),
+)
+
+LEG_C_CARGO_KNOWN_CO2_UNKNOWN = LegEmissionRecord(
+    leg_id=4,
+    leg_code="1DBRFR6",
+    vessel_id=1,
+    co2_emitted_t=Decimal(0),  # coercion `_emissions_provider` — pas un vrai zéro
+    cargo_t=Decimal("500"),
+    distance_nm=Decimal("1000"),
+    etd=datetime(2026, 4, 1, tzinfo=UTC),
+    ata=datetime(2026, 4, 20, tzinfo=UTC),
+    has_kpi=False,  # CO2 MRV pas encore calculé pour ce voyage
+    cargo_mrv_t=Decimal("500"),
+    co2_op_t=None,
 )
 
 
@@ -94,18 +131,32 @@ def test_leg_ef_method_a_laden_voyage_is_computed():
     assert result.value_gco2_tkm == Decimal("54.00")
 
 
-def test_leg_ef_method_a_ballast_voyage_is_na():
-    """A « réel » : cargo nul ⇒ exclu (division par zéro évitée), marqué N/A."""
+def test_leg_ef_method_a_ballast_voyage_uses_1t_reference():
+    """🔴 Voyage sur lest (§9.2, A8) : 1 tonne fictive, jamais un tiret.
+
+    Arbitré le 2026-09-14 : au voyage, un cargo CONNU et nul calcule son EF
+    comme s'il avait porté 1 tonne — rend le voyage visible plutôt que de le
+    cacher derrière un N/A. `is_ballast_assumed` porte l'avertissement :
+    toute surface qui affiche `value_gco2_tkm` doit afficher ce drapeau.
+    """
     result = leg_ef(LEG_BALLAST, method="A", occupancy_pct=OCC, capacity_ref_t=CAP)
-    assert result.value_gco2_tkm is None
-    assert result.na_reason == NA_BALLAST
+    assert result.na_reason is None
+    assert result.is_ballast_assumed is True
+    # 30 t CO2 × 1e6 / (1 t fictive × (800 nm × 1,852)) = 20 248,38 gCO2/t.km.
+    assert result.value_gco2_tkm == Decimal("20248.38")
+
+
+def test_leg_ef_method_a_laden_voyage_is_not_ballast_assumed():
+    result = leg_ef(LEG_LADEN, method="A", occupancy_pct=OCC, capacity_ref_t=CAP)
+    assert result.is_ballast_assumed is False
 
 
 def test_leg_ef_method_b_includes_ballast_voyage():
     """B « standardisé » : capacité×occupancy ne dépend pas du cargo réel —
-    calculable même sur un voyage sur lest."""
+    calculable même sur un voyage sur lest, sans recours à la tonne fictive."""
     result = leg_ef(LEG_BALLAST, method="B", occupancy_pct=OCC, capacity_ref_t=CAP)
     assert result.na_reason is None
+    assert result.is_ballast_assumed is False
     # 30 t CO2 × 1e6 / (1100 × 0,70 × (800 × 1,852)) = 26,30 gCO2/t.km
     assert result.value_gco2_tkm == Decimal("26.30")
 
@@ -154,6 +205,36 @@ def test_aggregate_ef_method_c_is_na_with_reason():
     assert ef.value_gco2_tkm is None
     assert ef.na_reason == NA_CARGO_MRV
     assert denom == Decimal(0)
+
+
+def test_aggregate_ef_method_c_excludes_unknown_co2_from_denominator():
+    """🔴 Règle §8.2 n°2 : `cargo_mrv_t` connu ne suffit pas, il faut aussi le CO2.
+
+    Avant correction, ``usable`` ne filtrait que sur ``cargo_mrv_t is not
+    None`` : un voyage à cargo MRV saisi mais CO2 pas encore calculé
+    (``has_kpi=False``, ``co2_emitted_t`` ramené à 0 par
+    ``_emissions_provider``) apportait ses tonnes-kilomètres au dénominateur
+    SANS apporter son CO2 au numérateur — l'EF agrégé en ressortait divisé par
+    un facteur proche de 2 (audit du calcul, 2026-09-11).
+    """
+    from app.services.co2 import NM_TO_KM
+
+    ef_known_only, denom_known_only = aggregate_ef(
+        [LEG_C_KNOWN], method="C", occupancy_pct=OCC, capacity_ref_t=CAP
+    )
+    ef_with_unknown, denom_with_unknown = aggregate_ef(
+        [LEG_C_KNOWN, LEG_C_CARGO_KNOWN_CO2_UNKNOWN],
+        method="C",
+        occupancy_pct=OCC,
+        capacity_ref_t=CAP,
+    )
+
+    # Le voyage à CO2 inconnu ne doit apporter NI numérateur NI dénominateur :
+    # le résultat agrégé est identique, qu'il soit présent ou non.
+    assert denom_with_unknown == denom_known_only
+    assert denom_known_only == LEG_C_KNOWN.cargo_mrv_t * LEG_C_KNOWN.distance_nm * NM_TO_KM
+    assert ef_with_unknown.value_gco2_tkm == ef_known_only.value_gco2_tkm
+    assert ef_with_unknown.na_reason is None
 
 
 def test_aggregate_ef_method_a_no_laden_voyage_is_na():
@@ -281,21 +362,26 @@ async def test_get_dashboard_parameters_coded_default_when_table_empty(db):
 
 @pytest.mark.asyncio
 async def test_get_dashboard_parameters_reads_db_override(db):
+    # Le porte-conteneurs servait d'exemple ici : il est retiré (méthodologie
+    # v3.0 §11.1). L'aérien subsiste et fait le même office.
     db.add(
         DashboardParameter(
-            parameter_name="ef_container_ship_gco2_tkm",
+            parameter_name="ef_airfreight_gco2_tkm",
             vessel_id=None,
-            value=Decimal("20"),
+            value=Decimal("700"),
             unit="gCO2/t.km",
         )
     )
     await db.flush()
 
     params = await get_dashboard_parameters(db)
-    assert params["ef_container_ship_gco2_tkm"].value == Decimal("20")
-    assert params["ef_container_ship_gco2_tkm"].source == "global"
+    assert params["ef_airfreight_gco2_tkm"].value == Decimal("700")
+    assert params["ef_airfreight_gco2_tkm"].source == "global"
     # Les autres paramètres, non présents en base, retombent sur le défaut codé.
-    assert params["ef_airfreight_gco2_tkm"].source == "coded_default"
+    assert params["occupancy_rate_pct"].source == "coded_default"
+    # 🔴 Et le paramètre retiré n'est plus résolu DU TOUT, même si une ligne
+    # subsiste en base : `get_dashboard_parameters` itère sur les défauts codés.
+    assert "ef_container_ship_gco2_tkm" not in params
 
 
 async def _seed_two_legs(db):
@@ -380,21 +466,21 @@ async def test_fleet_summary_avoided_changes_when_parameter_is_edited(db):
     now = datetime(2026, 7, 9, tzinfo=UTC)
 
     before = await fleet_summary(db, period=2026, method="A", now=now)
-    avoided_before = before.fleet.avoided_container.avoided_t
+    avoided_before = before.fleet.avoided_airfreight.avoided_t
     assert avoided_before is not None
 
     db.add(
         DashboardParameter(
-            parameter_name="ef_container_ship_gco2_tkm",
+            parameter_name="ef_airfreight_gco2_tkm",
             vessel_id=None,
-            value=Decimal("20"),
+            value=Decimal("700"),
             unit="gCO2/t.km",
         )
     )
     await db.flush()
 
     after = await fleet_summary(db, period=2026, method="A", now=now)
-    avoided_after = after.fleet.avoided_container.avoided_t
+    avoided_after = after.fleet.avoided_airfreight.avoided_t
 
     assert avoided_after is not None
     assert avoided_after != avoided_before
@@ -406,8 +492,9 @@ async def test_fleet_summary_method_c_is_na_end_to_end(db):
     summary = await fleet_summary(db, period=2026, method="C", now=datetime(2026, 7, 9, tzinfo=UTC))
     assert summary.fleet.ef.value_gco2_tkm is None
     assert summary.fleet.ef.na_reason == NA_CARGO_MRV
-    assert summary.fleet.avoided_container.avoided_t is None
     assert summary.fleet.avoided_airfreight.avoided_t is None
+    # Le bloc « évité vs porte-conteneurs » n'existe plus sur le contrat.
+    assert not hasattr(summary.fleet, "avoided_container")
 
 
 @pytest.mark.asyncio

@@ -120,7 +120,17 @@
         <td class="text-right mono">{{ "%.2f"|format(r.conso_total_t) if r.conso_total_t is not none else t('dashperf_na', lang) }}</td>
         <td class="text-right mono">{{ "%.2f"|format(r.co2_t) if r.co2_t is not none else t('dashperf_na', lang) }}</td>
         <td class="text-right mono">{{ "%.0f"|format(r.cargo_bl_t) if r.cargo_bl_t is not none else '0' }}</td>
-        <td class="text-right mono">{{ "%.2f"|format(r.ef_gco2_tkm) if r.ef_gco2_tkm is not none else t('dashperf_na', lang) }}</td>
+        <td class="text-right mono">
+          {{ "%.2f"|format(r.ef_gco2_tkm) if r.ef_gco2_tkm is not none else t('dashperf_na', lang) }}
+          {% if r.is_ballast and m in ('A', 'C') and r.ef_gco2_tkm is not none %}
+          <i data-lucide="alert-triangle" style="color:var(--warning);width:14px;height:14px;vertical-align:-2px;"
+             title="{{ t('dashperf_ballast_1t_warning', lang) }}"></i>
+          {% endif %}
+          {% if r.distance_is_theoretical and r.ef_gco2_tkm is not none %}
+          <i data-lucide="ruler" style="color:var(--warning);width:14px;height:14px;vertical-align:-2px;"
+             title="{{ t('dashperf_distance_theoretical_warning', lang) }}"></i>
+          {% endif %}
+        </td>
         <td>
           {% if r.source == 'events' %}<span class="pill pill-success text-xs">{{ t('dashperf_source_events', lang) }}</span>
           {% else %}<span class="pill pill-warn text-xs">{{ t('dashperf_source_' ~ r.source, lang) }}</span>{% endif %}

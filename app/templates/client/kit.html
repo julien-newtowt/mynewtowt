@@ -10,10 +10,10 @@
 <p class="text-muted">
   {% if lang == 'en' %}
     Ready-to-use assets to sell this shipment to your own customers: an origin
-    story, the avoided-CO₂ proof and a verification QR code.
+    story, the measured-emissions certificate and a verification QR code.
   {% else %}
     Des assets prêts à l'emploi pour revendre cette expédition à vos propres
-    clients : un récit d'origine, la preuve de CO₂ évité et un QR de vérification.
+    clients : un récit d'origine, le certificat d'émissions mesurées et un QR de vérification.
   {% endif %}
 </p>
 
@@ -43,25 +43,22 @@
     {% if lang == 'en' %}Edit my brand{% else %}Modifier ma marque{% endif %}
   </a>
 </section>
+  {# 🔴 Le chiffre « CO₂ évité » et ses équivalences (arbres, vols, camions)
+     sont retirés : ils comparaient à un cargo conventionnel à 13,7 gCO₂/t·km,
+     base écartée par la méthodologie v3.0 (§11.1).
 
-{# ===== CO₂ évité (valeur figée du certificat) + QR ===== #}
-{% if cert and co2_kg %}
+     Le QR et les liens de vérification RESTENT : ils pointent vers une page qui
+     montre ce qui est mesuré — émissions réelles et part du temps de navigation
+     sous voiles. C'est la substitution que la méthodologie prescrit, pas une
+     suppression. #}
 <section class="card">
   <h2 style="margin-top:0;">
-    {{ co2_kg }} kg {% if lang == 'en' %}of CO₂ avoided{% else %}de CO₂ évité{% endif %}
+    {% if lang == 'en' %}Verify this shipment{% else %}Vérifier cette expédition{% endif %}
   </h2>
   <p class="text-muted">
-    {% if lang == 'en' %}On this shipment, vs an equivalent conventional cargo ship — tank-to-wake, certified Anemos.
-    {% else %}Sur cette expédition, vs un cargo conventionnel équivalent — tank-to-wake, certifié Anemos.{% endif %}
+    {% if lang == 'en' %}Measured emissions and share of navigation time under sail, verifiable by anyone.
+    {% else %}Émissions mesurées et part du temps de navigation sous voiles, vérifiables par quiconque.{% endif %}
   </p>
-  <div style="display:flex;gap:var(--space-5);flex-wrap:wrap;margin:var(--space-4) 0;">
-    <div><strong style="font-size:1.4rem;">{{ (co2_kg / 25) | round(0, 'floor') | int }}</strong><br/>
-      <span class="text-muted">{{ t('rd_eco_eq_trees', lang) }}</span></div>
-    <div><strong style="font-size:1.4rem;">{{ (co2_kg / 1000) | round(1) }}</strong><br/>
-      <span class="text-muted">{{ t('rd_eco_eq_flights', lang) }}</span></div>
-    <div><strong style="font-size:1.4rem;">{{ (co2_kg / 0.9) | round(0, 'floor') | int }}</strong><br/>
-      <span class="text-muted">{{ t('rd_eco_eq_truck', lang) }}</span></div>
-  </div>
   <div style="display:flex;gap:var(--space-4);align-items:center;flex-wrap:wrap;">
     {% if co2eq_qr %}
     <img src="{{ co2eq_qr }}" width="96" height="96"
@@ -97,19 +94,7 @@
   </p>
   {% endif %}
 </section>
-{% else %}
-<section class="card">
-  <p class="text-muted">
-    {% if lang == 'en' %}
-      The Anemos certificate (with your avoided CO₂) is issued automatically on
-      delivery. You can already prepare your origin story below.
-    {% else %}
-      Le certificat Anemos (avec votre CO₂ évité) est émis automatiquement à la
-      livraison. Vous pouvez déjà préparer votre récit d'origine ci-dessous.
-    {% endif %}
-  </p>
-</section>
-{% endif %}
+
 
 {# ===== Visuels sociaux prêts à poster (P12) ===== #}
 <section class="card">

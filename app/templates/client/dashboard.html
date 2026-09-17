@@ -75,13 +75,10 @@
       {% if lang == 'en' %}in transit or upcoming{% else %}en transit ou à venir{% endif %}
     </div>
   </div>
-  <div class="kpi-card">
-    <div class="label">{% if lang == 'en' %}Cumulative CO₂ avoided{% else %}CO₂ évité cumulé{% endif %}</div>
-    <div class="value text-accent">{{ "%.0f"|format(co2_avoided_kg) }} kg</div>
-    <div class="delta up">
-      {% if lang == 'en' %}vs conventional cargo{% else %}vs cargo conventionnel{% endif %}
-    </div>
-  </div>
+  {# 🔴 Carte « CO₂ évité cumulé » retirée : elle sommait un évitement calculé
+     contre un porte-conteneurs conventionnel à 13,7 gCO₂/t·km, base écartée par
+     la méthodologie v3.0 (§11.1). La laisser à zéro aurait affiché « 0 kg
+     évité » — un chiffre faux plutôt qu'une absence. #}
   <div class="kpi-card">
     <div class="label">{% if lang == 'en' %}Customer segment{% else %}Segment client{% endif %}</div>
     <div class="value mono">{{ client.segment }}</div>

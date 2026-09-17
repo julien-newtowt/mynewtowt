@@ -129,7 +129,12 @@ class LegEmissionRow:
 
     @property
     def co2_with_anchoring_t(self) -> Decimal | None:
-        """Trajet + mouillage — **hors périmètre MRV**, à n'afficher qu'en opt-in.
+        """Trajet + mouillage — l'assiette de l'**approche Métier**.
+
+        Hors de l'approche MRV, qui exclut le mouillage, mais bien dans
+        l'approche Métier, qui mesure la performance du service vendu
+        (méthodologie v3.0 §1.2, §9.1). Affiché sur demande, jamais confondu
+        avec le chiffre réglementaire.
 
         ``None`` dès qu'un des deux termes manque : un total partiel qui
         passerait pour complet serait pire que pas de total.

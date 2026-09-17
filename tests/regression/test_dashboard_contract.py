@@ -91,10 +91,31 @@ VESSEL_KPI_BLOCK_FIELDS = {
     "co2_emitted_t": "Decimal",
     "distance_nm": "Decimal",
     "ef": "EfResult",
-    "avoided_container": "AvoidedResult",
+    # 🔴 Retrait (2026-09-11) : `avoided_container` comparait a un
+    # porte-conteneurs conventionnel, base ecartee par la methodologie v3.0
+    # (§11.1). Retirer un champ est CASSANT :
+    # `DASHBOARD_CONTRACT_VERSION` passe de 1 a 2.
     "avoided_airfreight": "AvoidedResult",
     "completeness": "CompletenessBlock",
     "legs_excluded_non_event": "int",  # NC-04
+    # Ajout compatible (2026-09-11) : taux de decarbonation « nous-memes sans
+    # voiles » (methodologie v3.0 §11.2). Champ en FIN de dataclass AVEC
+    # defaut, donc aucun constructeur existant n'est casse — extension, pas
+    # d'increment de DASHBOARD_CONTRACT_VERSION (qui reste a 2, valeur posee
+    # par le RETRAIT de `avoided_container`).
+    #
+    # ⚠️ Suivi INTERNE : la methodologie §1.2 bis ne publie pas ce taux de
+    # notre propre initiative. Tout consommateur du contrat qui l'expose doit
+    # NOMMER la base de reference a cote du chiffre.
+    "decarbonation": "DecarbonationResult | None",
+    # Ajout compatible (2026-09-11) : profil de propulsion du PERIMETRE
+    # (flotte ou navire), par cumul de tranches. C'est l'indicateur que la
+    # methodologie porte vers l'exterieur (§1.2 bis) : il doit exister a
+    # l'echelle ou il est communique, pas seulement au voyage.
+    #
+    # Champ en FIN de dataclass AVEC defaut => extension, pas d'increment de
+    # DASHBOARD_CONTRACT_VERSION.
+    "propulsion": "PropulsionProfile | None",
 }
 
 COMPLETENESS_BLOCK_FIELDS = {
@@ -107,6 +128,11 @@ EF_RESULT_FIELDS = {
     "method": "str",
     "value_gco2_tkm": "Decimal | None",
     "na_reason": "str | None",
+    # Ajout compatible (2026-09-14) : voyage sur lest (§9.2, A8, arbitre) —
+    # `value_gco2_tkm` calcule sur 1 tonne fictive plutot qu'un N/A. Champ en
+    # FIN de dataclass AVEC defaut => extension, pas d'increment de
+    # DASHBOARD_CONTRACT_VERSION.
+    "is_ballast_assumed": "bool",
 }
 
 AVOIDED_RESULT_FIELDS = {
@@ -161,6 +187,10 @@ VOYAGE_ROW_FIELDS = {
     "ef_gco2_tkm": "Decimal | None",
     "is_ballast": "bool",
     "source": "str",  # events | legacy_noon | legacy_kpi | none
+    # Ajout compatible (2026-09-14) : repli de distance signale (§5.3, niveau
+    # 2 — Lot 4). Champ en FIN de dataclass AVEC defaut => extension, pas
+    # d'increment de DASHBOARD_CONTRACT_VERSION.
+    "distance_is_theoretical": "bool",
 }
 
 VOYAGE_DETAIL_FIELDS = {
@@ -249,6 +279,21 @@ LEDGER_RESULT_FIELDS = {
     # cote et ne s'ajoutent que sur demande explicite.
     "co2_mouillage_t": "Decimal | None",
     "co2eq_mouillage_t": "Decimal | None",
+    # Ajout compatible (2026-09-11) : assiette de l'approche METIER (trajet +
+    # mouillage), numerateur des methodes A et B. Champ en FIN de dataclass AVEC
+    # defaut => extension, pas d'increment de DASHBOARD_CONTRACT_VERSION.
+    #
+    # 🔴 A ne pas confondre avec `co2_emitted_t`, qui reste l'assiette MRV (hors
+    # mouillage). Les faire partager un numerateur faisait dire a l'intensite
+    # Metier autre chose que ce qu'elle annonce.
+    "co2_op_t": "Decimal | None",
+    # Ajout compatible (2026-09-14) : travail de transport (t.km, annexe E),
+    # jusqu'ici calcule en interne comme seul denominateur des EF, jamais
+    # restitue comme grandeur a part. Champs en FIN de dataclass AVEC defaut
+    # (meme statut que `avoided_co2_kg` : calcules, jamais persistes) =>
+    # extension, pas d'increment de DASHBOARD_CONTRACT_VERSION.
+    "transport_work_mrv_t_km": "Decimal | None",
+    "transport_work_simulated_t_km": "Decimal | None",
 }
 
 # Clés exactes du dict retourné par emission_ledger.emissions_breakdown() —
@@ -387,4 +432,6 @@ def test_emission_ledger_contract():
 def test_contract_version_present():
     """La constante de version existe — tout changement cassant ci-dessus doit l'incrémenter."""
     assert isinstance(kpi_env.DASHBOARD_CONTRACT_VERSION, int)
-    assert kpi_env.DASHBOARD_CONTRACT_VERSION >= 1
+    # >= 2 depuis le retrait de `avoided_container` : un retour a 1 signalerait
+    # qu'un changement cassant a ete rejoue sans incrementer la version.
+    assert kpi_env.DASHBOARD_CONTRACT_VERSION >= 2

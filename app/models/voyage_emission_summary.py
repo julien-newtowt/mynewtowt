@@ -56,7 +56,7 @@ class VoyageEmissionSummary(Base):
     co2_t: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
     ch4_g: Mapped[Decimal | None] = mapped_column(Numeric(20, 6))
     n2o_g: Mapped[Decimal | None] = mapped_column(Numeric(20, 6))
-    # CO₂eq TtW (GWP-100, Annexe I EU 2015/757, G13) — DISTINCT du WtT ci-dessous.
+    # CO₂eq TtW (GWP-100 AR5, MEPC.391(81) §2.4, G13) — DISTINCT du WtT ci-dessous.
     co2eq_t: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
     wtt_co2eq_t: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
 

@@ -57,11 +57,27 @@
   <div class="kpi-card">
     <div class="label">{{ t('dashperf_kpi_ef', lang) }}</div>
     <div class="value text-sm" style="line-height:1.5;">
-      A {{ "%.2f"|format(L.ef_method_a) if L.ef_method_a is not none else 'N/A' }}<br>
+      A {{ "%.2f"|format(L.ef_method_a) if L.ef_method_a is not none else 'N/A' }}
+      {% if L.ef_method_a is not none and L.cargo_bl_t is not none and L.cargo_bl_t <= 0 %}
+      <i data-lucide="alert-triangle" style="color:var(--warning);width:12px;height:12px;vertical-align:-1px;"
+         title="{{ t('dashperf_ballast_1t_warning', lang) }}"></i>
+      {% endif %}<br>
       B {{ "%.2f"|format(L.ef_method_b) if L.ef_method_b is not none else 'N/A' }}<br>
       C {{ "%.2f"|format(L.ef_method_c) if L.ef_method_c is not none else 'N/A' }}
+      {% if L.ef_method_c is not none and L.cargo_mrv_t is not none and L.cargo_mrv_t <= 0 %}
+      <i data-lucide="alert-triangle" style="color:var(--warning);width:12px;height:12px;vertical-align:-1px;"
+         title="{{ t('dashperf_ballast_1t_warning', lang) }}"></i>
+      {% endif %}
     </div>
     <div class="delta text-muted">gCO₂/t·km</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">{{ t('dashperf_kpi_transport_work', lang) }}</div>
+    <div class="value text-sm" style="line-height:1.5;">
+      MRV (C) {{ "%.0f"|format(L.transport_work_mrv_t_km) if L.transport_work_mrv_t_km is not none else 'N/A' }}<br>
+      {{ t('dashperf_transport_work_simulated', lang) }} (B) {{ "%.0f"|format(L.transport_work_simulated_t_km) if L.transport_work_simulated_t_km is not none else 'N/A' }}
+    </div>
+    <div class="delta text-muted">t·km</div>
   </div>
 </section>
 

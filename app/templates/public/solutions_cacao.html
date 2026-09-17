@@ -4,7 +4,6 @@
 {% block description %}{{ t('cacao_meta_desc', lang) }}{% endblock %}
 
 {% block head %}
-  <script src="{{ asset('js/co2-equivalences.js') }}" defer></script>
 {% endblock %}
 
 {% block content %}
@@ -68,7 +67,7 @@
     <span class="section-kicker">3 · {{ t('cacao_s3_kicker', lang) }}</span>
     <h2 class="section-title">{{ t('cacao_s3_title', lang) }}</h2>
     <p class="section-lead" style="max-width:760px;margin-bottom:var(--sp-5)">{{ t('cacao_s3_lead', lang) }}</p>
-    {% include "public/_co2_equivalences_interactive.html" %}
+    {% include "public/_verification_qr.html" %}
   </div>
 </section>
 

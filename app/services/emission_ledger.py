@@ -80,13 +80,31 @@ _CAPACITY_REF_DEFAULT = Decimal("1100")
 
 _EF_QUANT = Decimal("0.0001")  # gCO₂/t·km (méthodes A/B/C matérialisées)
 
-# GWP-100 (Annexe I, règlement EU 2015/757) — CH₄ = 25, N₂O = 298 (G13).
+# GWP-100 **AR5** — CH₄ = 28, N₂O = 265.
+#
+# 🔴 Arbitrage du 2026-09-11 : on suit la **méthodologie de performance
+# environnementale v3.0**, hypothèse **A11**, qui prend les PRG du 5ᵉ rapport
+# du GIEC tels que MEPC.391(81) §2.4 les fixe — ce sont donc des valeurs
+# **citables à l'OMI**, et non simplement défendables.
+#
+# La version précédente portait 25 / 298 (4ᵉ rapport), au motif du règlement
+# EU 2015/757. Les deux sources sont réelles et ne visent pas la même
+# obligation ; la méthodologie tranche, parce que c'est elle qui définit ce
+# que l'entreprise publie. Écart sur le CO₂eq du MDO : 3,26089 → **3,2551**
+# t CO₂e/t, soit −0,18 %.
+#
+# ⚠️ Sans effet sur les **intensités publiées**, qui sont en CO₂ seul (facteur
+# 3,206, cf. méthodologie §4.3). Ce jeu de PRG ne sert que le CO₂eq TtW — et
+# servira le **taux de décarbonation**, dont la méthodologie exige qu'il soit
+# calculé sur le périmètre le plus large disponible **des deux côtés** du
+# rapport. C'est pourquoi l'arbitrage devait précéder le Lot 3.
+#
 # Constantes réglementaires stables (pas des seuils métier à calibrer par
 # voyage pilote, contrairement à ``ValidationRuleThreshold``) — même posture
-# que ``MDO_LHV_MJ_PER_T`` ci-dessus : à réviser uniquement si le règlement
-# change son horizon GWP, pas un paramètre par carburant (``EmissionFactor``).
-GWP_CH4 = Decimal("25")
-GWP_N2O = Decimal("298")
+# que ``MDO_LHV_MJ_PER_T`` ci-dessus : à réviser uniquement si l'horizon PRG
+# retenu change, pas un paramètre par carburant (``EmissionFactor``).
+GWP_CH4 = Decimal("28")
+GWP_N2O = Decimal("265")
 
 
 def _num(value: Decimal | int | float | None) -> str | None:
@@ -133,8 +151,8 @@ def emissions_breakdown(conso_t: Decimal | None, factor: ResolvedEmissionFactor)
     - CH₄ / N₂O [g] = ``conso_t × ef × 1e6`` (tonnes de GES → grammes) ;
     - WtT (Well-to-Tank, FuelEU) = ``conso_t × PCI × wtt_gco2eq_per_mj / 1e6`` —
       **distinct du TtW, jamais sommé** au CO₂ TtW sans l'expliciter ;
-    - CO₂eq (GWP-100, tank-to-wake, G13) = ``conso_t × (ef_co2 + ef_ch4 × 25 +
-      ef_n2o × 298)`` (Annexe I, EU 2015/757) — additionne les 3 GES TtW en
+    - CO₂eq (GWP-100 AR5, tank-to-wake, G13) = ``conso_t × (ef_co2 + ef_ch4 × 28 +
+      ef_n2o × 265)`` (PRG AR5, MEPC.391(81) §2.4) — additionne les 3 GES TtW en
       équivalent CO₂ ; **distinct du WtT** (qui reste hors périmètre TtW).
     """
     wtt_intensity = factor.wtt_gco2eq_per_mj
@@ -232,13 +250,22 @@ class LedgerResult:
     ef_method_b: Decimal | None
     ef_method_c: Decimal | None
 
-    # ── Émissions du séjour au port (« Port Emissions ») ─────────────────
+    # ── Émissions du séjour au port — 🔴 HORS DES DEUX APPROCHES ─────────
     #
     # Assiette DISJOINTE de `co2_emitted_t` : celle-là porte le trajet (conso
     # hors mouillage), celles-ci l'escale qui SUIT l'arrivée (`conso_escale_t`,
     # G12). Les deux ne se recouvrent pas et ne doivent jamais être
     # additionnées sans le dire — l'escale d'un leg peut s'étendre sur la
     # fenêtre du leg suivant.
+    #
+    # 🔴 **L'escale n'entre dans AUCUNE des deux intensités** (méthodologie
+    # v3.0 §1.2, §4.4) : le carburant brûlé à quai ne contribue pas au
+    # transport, et le rapporter à des tonnes-kilomètres n'a pas de sens
+    # puisque le navire ne bouge pas. Ce poste sert à autre chose, et c'est
+    # précieux : il **explique l'écart** avec la déclaration officielle
+    # THETIS-MRV, qui l'inclut (§4.6). Sans lui, un lecteur comparant nos
+    # chiffres à la plateforme conclurait à une incohérence, voire à une
+    # sous-déclaration.
     #
     # Même facteur, même primitive (`emissions_breakdown`) : c'est la règle
     # d'or, l'unique multiplication conso × facteur vit dans ce module.
@@ -252,23 +279,64 @@ class LedgerResult:
     co2_escale_t: Decimal | None = None
     co2eq_escale_t: Decimal | None = None
 
-    # ── Émissions au mouillage — 🔴 HORS PÉRIMÈTRE MRV ───────────────────
+    # ── Émissions au mouillage — assiette de l'approche MÉTIER ───────────
     #
     # Troisième assiette, disjointe des deux autres : la consommation au
     # mouillage/à la dérive (`conso_mouillage_t`), exclue de l'assiette du
     # trajet par construction (`do_consumed = conso_hors`).
     #
-    # 🔴 **Ce chiffre n'appartient pas au périmètre MRV** (constat métier du
-    # 2026-09-04). Il existe pour l'analyse interne — du carburant brûlé mérite
-    # une émission connue — et **ne doit jamais être additionné à `co2_emitted_t`
-    # ni à `co2_escale_t` pour produire un total présenté comme réglementaire**.
-    # Toute restitution qui l'inclut doit être explicitement opt-in et porter la
-    # mention du périmètre (cf. `/mrv/emissions/voyages`, sélecteur).
+    # 🔴 **Hors de l'approche MRV, mais DANS l'approche Métier** (méthodologie
+    # v3.0 §1.2, §4.4). Le règlement l'exclut parce qu'il mesure l'efficacité
+    # *en transport* ; la performance du service vendu l'inclut, parce qu'« un
+    # navire au mouillage en attente de créneau brûle du carburant au titre de
+    # ce voyage, et le chargeur en supporte l'impact ».
+    #
+    # Ce n'est donc PAS un indicateur purement interne : `co2_emitted_t +
+    # co2_mouillage_t` est le numérateur d'une intensité **publiable**
+    # (`kpi_env`, méthode B). Ce qu'il ne faut jamais faire est l'additionner au
+    # chiffre MRV ou le présenter sous son nom — deux lectures nommées, jamais
+    # l'une pour l'autre.
     #
     # Même facteur et même primitive que les deux autres assiettes : la règle
     # d'or ne souffre pas d'exception, y compris pour un chiffre hors MRV.
     co2_mouillage_t: Decimal | None = None
     co2eq_mouillage_t: Decimal | None = None
+
+    # ── Assiette de l'approche MÉTIER : trajet + mouillage ───────────────
+    #
+    # 🔴 `co2_emitted_t` porte l'assiette **hors mouillage** : c'est le
+    # numérateur de l'approche MRV, et de lui seul. L'approche Métier et la
+    # lecture B/L prennent la consommation **berth-to-berth, mouillage inclus**
+    # (méthodologie v3.0 §1.2, §9.1, §10).
+    #
+    # Exposé plutôt que recalculé chez l'appelant : c'est le numérateur des
+    # méthodes A et B ci-dessous, et `kpi_env` en dérive le sien depuis le
+    # résumé persisté. Une seule définition, deux lecteurs.
+    #
+    # ``None`` = mouillage inconnu ⇒ méthodes A et B non calculables, jamais un
+    # repli silencieux sur l'assiette MRV, qui publierait un chiffre
+    # sous-estimé sous le nom d'une autre approche.
+    co2_op_t: Decimal | None = None
+
+    # 🔴 Travail de transport (t·km), arbitré et exposé le 2026-09-14.
+    #
+    # Jusqu'ici calculé en interne comme SEUL dénominateur des méthodes A/B/C
+    # (cf. ``_ef_method``), jamais restitué comme grandeur à part — alors que
+    # l'annexe E de la méthodologie de performance environnementale v3.0 le
+    # liste parmi les champs publiés (§8.1, §9.1) :
+    #
+    # - ``transport_work_mrv_t_km`` — assiette RÉELLE, méthode C (cargo MRV,
+    #   1 tonne fictive sur un voyage sur lest — cf. `_denom_or_ballast_reference`,
+    #   ``None`` si le cargo MRV n'est pas disponible) ;
+    # - ``transport_work_simulated_t_km`` — assiette STANDARDISÉE, méthode B
+    #   (capacité de référence × taux d'occupation), calculable même sur un
+    #   voyage sur lest puisqu'elle ne dépend jamais du chargement réel.
+    #
+    # Champs en FIN de dataclass AVEC défaut ``None`` — extension compatible,
+    # pas d'incrément de ``DASHBOARD_CONTRACT_VERSION`` (même statut que
+    # `avoided_co2_kg` : calculés, jamais persistés).
+    transport_work_mrv_t_km: Decimal | None = None
+    transport_work_simulated_t_km: Decimal | None = None
 
 
 # ════════════════════════════════════════════════════════════ Helpers datetime
@@ -560,6 +628,39 @@ async def _dashboard_param(db: AsyncSession, name: str, default: Decimal) -> Dec
 
 # ════════════════════════════════════════════════════════════ Intensités / EF
 
+# 🔴 Voyage sur lest, méthodologie v3.0 §9.2 (hypothèse A8) — arbitré le
+# 2026-09-14 : au niveau du VOYAGE (jamais des agrégats), un cargo CONNU et
+# nul calcule son EF comme s'il avait porté 1 tonne fictive plutôt que de
+# renvoyer un N/A. Objectif : rendre le voyage sur lest VISIBLE plutôt que de
+# le cacher derrière un tiret — la valeur reste une fiction de calcul, jamais
+# une mesure, d'où l'obligation d'un avertissement partout où elle s'affiche
+# (``VoyageRow.is_ballast`` porte déjà ce signal, sans colonne supplémentaire :
+# un cargo exactement nul ET un EF non-``None`` suffisent à le reconnaître).
+#
+# Un cargo INCONNU (``None``) n'est PAS un cargo nul : lui substituer 1 tonne
+# fabriquerait une valeur là où la donnée manque, exactement l'anti-motif que
+# cette règle est censée éviter ailleurs (« inconnu ≠ nul », cf. §8.2). Un
+# voyage à cargo inconnu reste donc N/A, comme avant.
+#
+# Cette fiction ne doit JAMAIS entrer dans un agrégat multi-voyages : la
+# méthodologie le dit explicitement, et ``aggregate_ef`` (kpi_env.py) exclut
+# déjà les voyages sur lest de son dénominateur — ce module n'y touche pas,
+# la substitution ne vit qu'ici, au calcul du facteur PAR VOYAGE.
+_BALLAST_REFERENCE_T = Decimal(1)
+
+
+def _denom_or_ballast_reference(denom_t: Decimal | None) -> Decimal | None:
+    """Substitue 1 tonne fictive à un cargo CONNU et nul (voyage sur lest).
+
+    ``None`` (cargo inconnu) traverse inchangé — seule une vraie mesure à zéro
+    déclenche la fiction de calcul.
+    """
+    if denom_t is None:
+        return None
+    if denom_t <= 0:
+        return _BALLAST_REFERENCE_T
+    return denom_t
+
 
 def _ef_method(
     co2_t: Decimal | None, denom_t: Decimal | None, distance_km: Decimal | None
@@ -568,6 +669,36 @@ def _ef_method(
     if co2_t is None or denom_t is None or denom_t <= 0 or distance_km is None or distance_km <= 0:
         return None
     return (co2_t * _MILLION / (denom_t * distance_km)).quantize(_EF_QUANT)
+
+
+def numerator_for_method(
+    method: str, *, co2_mrv_t: Decimal | None, co2_op_t: Decimal | None
+) -> Decimal | None:
+    """Le numérateur de CHAQUE lecture — unique définition de la règle.
+
+    🔴 Méthodologie de performance environnementale v3.0, §1.2, §9.1 et §10 :
+
+    - **C — approche MRV** : assiette **hors mouillage**. C'est ce que le
+      règlement demande de déclarer, et il mesure l'efficacité *en transport*,
+      pas le comportement à l'arrêt ;
+    - **B — approche Métier** et **A — lecture B/L** : assiette
+      **berth-to-berth, mouillage inclus**. « Du point de vue du service vendu,
+      un navire au mouillage en attente de créneau brûle du carburant au titre
+      de ce voyage, et le chargeur en supporte l'impact. »
+
+    ⚠️ **Cette fonction existe pour qu'il n'y ait QU'UNE définition.** La règle
+    était auparavant écrite deux fois — ici et dans ``kpi_env.leg_ef`` — et
+    seule celle-ci était exécutée. Corriger l'autre donnait donc un test vert
+    sur du code mort, ce qui a masqué le fait que les EF **persistés**
+    gardaient le mauvais numérateur (constat d'audit du 2026-09-11).
+
+    ``None`` = non calculable (mouillage inconnu) : jamais un repli silencieux
+    sur l'assiette MRV, qui publierait un chiffre sous-estimé sous le nom d'une
+    autre approche.
+    """
+    if method not in EF_METHODS:
+        raise ValueError(f"méthode EF inconnue : {method!r} (attendu {EF_METHODS})")
+    return co2_mrv_t if method == "C" else co2_op_t
 
 
 # ════════════════════════════════════════════════════════════ Facteur
@@ -703,6 +834,22 @@ async def compute_for_leg(
         Decimal(em_mouillage["co2eq_t"]) if em_mouillage["co2eq_t"] is not None else None
     )
 
+    # Assiette MÉTIER (berth-to-berth) : trajet + mouillage.
+    #
+    # Deux provenances, deux lectures — les confondre fabriquerait un chiffre :
+    # en source ``events`` le mouillage est une somme d'intervalles, donc 0
+    # quand le navire n'a pas mouillé ; en repli ``legacy_noon`` il n'est pas
+    # séparable, et ``do_consumed`` est déjà un total indifférencié, donc
+    # berth-to-berth par construction.
+    if source == "events":
+        co2_op_t = (
+            (co2_emitted_t + co2_mouillage_t)
+            if (co2_emitted_t is not None and co2_mouillage_t is not None)
+            else None
+        )
+    else:
+        co2_op_t = co2_emitted_t
+
     # CO₂ évité : comparateur conventionnel ``co2.estimate`` (mêmes valeurs).
     avoided = await _avoided_co2_kg(db, distance, cargo_bl)
 
@@ -710,9 +857,39 @@ async def compute_for_leg(
     distance_km = (distance * NM_TO_KM) if distance is not None else None
     occupancy = await _dashboard_param(db, "occupancy_rate_pct", _OCCUPANCY_DEFAULT)
     capacity_ref = await _dashboard_param(db, "vessel_capacity_ref_t", _CAPACITY_REF_DEFAULT)
-    ef_a = _ef_method(co2_emitted_t, cargo_bl, distance_km)
-    ef_b = _ef_method(co2_emitted_t, capacity_ref * (occupancy / Decimal("100")), distance_km)
-    ef_c = _ef_method(co2_emitted_t, cargo_mrv, distance_km)
+    # 🔴 Chaque lecture porte SON numérateur (méthodologie §1.2).
+    #
+    # A (B/L) et B (Métier) prennent l'assiette berth-to-berth ; C (MRV) prend
+    # l'assiette hors mouillage. Ces trois valeurs sont PERSISTÉES dans
+    # ``voyage_emission_summaries`` et alimentent la page voyage, l'export PDF
+    # et le DOCX remis à un tiers : les faire partager le numérateur MRV
+    # faisait dire à l'intensité Métier autre chose que ce qu'elle annonce,
+    # partout où elle sort.
+    _num = {
+        m: numerator_for_method(m, co2_mrv_t=co2_emitted_t, co2_op_t=co2_op_t) for m in EF_METHODS
+    }
+    # Voyage sur lest (§9.2, A8) : 1 tonne fictive au lieu d'un N/A — cf.
+    # ``_denom_or_ballast_reference`` ci-dessus. B ne dépend jamais du cargo
+    # réel (dénominateur standardisé), donc jamais concernée.
+    cargo_mrv_denom = _denom_or_ballast_reference(cargo_mrv)
+    simulated_denom = capacity_ref * (occupancy / Decimal("100"))
+    ef_a = _ef_method(_num["A"], _denom_or_ballast_reference(cargo_bl), distance_km)
+    ef_b = _ef_method(_num["B"], simulated_denom, distance_km)
+    ef_c = _ef_method(_num["C"], cargo_mrv_denom, distance_km)
+
+    # Travail de transport (t·km) — annexe E, exposé le 2026-09-14 (cf. le
+    # champ sur `LedgerResult`). Même garde que `_ef_method` : pas de valeur
+    # sans distance connue.
+    transport_work_mrv_t_km = (
+        (cargo_mrv_denom * distance_km).quantize(_EF_QUANT)
+        if cargo_mrv_denom is not None and distance_km is not None and distance_km > 0
+        else None
+    )
+    transport_work_simulated_t_km = (
+        (simulated_denom * distance_km).quantize(_EF_QUANT)
+        if distance_km is not None and distance_km > 0
+        else None
+    )
 
     return LedgerResult(
         leg_id=leg.id,
@@ -740,9 +917,12 @@ async def compute_for_leg(
         co2_mouillage_t=co2_mouillage_t,
         co2eq_mouillage_t=co2eq_mouillage_t,
         avoided_co2_kg=avoided,
+        co2_op_t=co2_op_t,
         ef_method_a=ef_a,
         ef_method_b=ef_b,
         ef_method_c=ef_c,
+        transport_work_mrv_t_km=transport_work_mrv_t_km,
+        transport_work_simulated_t_km=transport_work_simulated_t_km,
     )
 
 

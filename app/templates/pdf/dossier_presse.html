@@ -16,8 +16,8 @@
   long-courrier, <strong>NewTowt</strong> est la compagnie maritime à propulsion
   vélique qui opère déjà une ligne régulière vers le Brésil et l'Amérique
   latine, en transportant du fret palettisé, marchandises dangereuses
-  comprises, avec une réduction de CO₂ mesurée et documentée par le
-  certificat Anemos d'émissions évitées.
+  comprises, avec des émissions mesurées, vérifiées sous EU MRV et
+  documentées par le certificat Anemos.
 </p>
 
 {% if counters and counters.has_content %}
@@ -32,7 +32,7 @@
     {% endif %}
     {% if counters.co2_avoided_kg %}
     <tr style="border-bottom:0.5pt solid #EFE6D6;">
-      <td style="padding:2mm 1mm;">CO₂ évité, attesté par certificat Anemos</td>
+      <td style="padding:2mm 1mm;">Émissions mesurées, attestées par certificat Anemos</td>
       <td style="padding:2mm 1mm;text-align:right;font-weight:bold;">−{{ counters.co2_str }}</td>
     </tr>
     {% endif %}

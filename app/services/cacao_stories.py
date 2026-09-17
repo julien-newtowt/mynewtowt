@@ -7,15 +7,16 @@ aromatiques se dégradent. Transporté sous la ligne de flottaison, à la
 température de la mer et en cale ventilée, il arrive intact — argument réel,
 pas une allégation d'ambiance.
 
-Gabarits **pré-remplis** : l'ERP injecte région, producteur, navire et le
-CO₂ évité (``[X] kg``) depuis le booking / le certificat Anemos ; la page
-vitrine ``/solutions/cacao`` les rend avec des valeurs d'exemple.
+Gabarits **pré-remplis** : l'ERP injecte région, producteur et navire depuis
+le booking / le certificat Anemos ; la page vitrine ``/solutions/cacao`` les
+rend avec des valeurs d'exemple.
 
 Fonctions **pures** (sans I/O). Garde-fous identiques à la verticale café :
 
-* **aucun pourcentage** (les chiffres sont en kg, jamais en %) ;
+* 🔴 **aucun chiffre d'émissions évitées** — base de comparaison écartée
+  (méthodologie de performance environnementale v3.0, §11.1) ;
 * « **certifié Anemos** » (jamais « label ») ;
-* le CO₂ évité reste **vérifiable via le QR** ``/verify`` ;
+* la traversée reste **vérifiable via le QR** ``/verify`` ;
 * sortie en **texte brut** (jamais ``|safe`` — auto-échappement Jinja).
 """
 
@@ -51,9 +52,9 @@ _LONG: dict[str, dict[str, str]] = {
             "cacao, il a voyagé à la voile à bord de {vessel}, sous la ligne de "
             "flottaison, à la température de la mer — à l'abri des à-coups "
             "thermiques qui ternissent les arômes floraux de l'Arriba. La "
-            "traversée a évité {co2}, mesuré et certifié Anemos : scannez le "
-            "code pour le vérifier. Un cacao qui arrive comme il est parti — "
-            "sans avoir réchauffé la planète pour venir jusqu'à vous."
+            "traversée est certifiée Anemos : scannez le code pour la "
+            "vérifier. Un cacao qui arrive comme il est parti — sans avoir "
+            "réchauffé la planète pour venir jusqu'à vous."
         ),
         "en": (
             "This Nacional cacao ripened in {region}, its pods harvested and "
@@ -61,9 +62,9 @@ _LONG: dict[str, dict[str, str]] = {
             "container that overheats and blooms the cocoa butter, it travelled "
             "under sail aboard {vessel}, below the waterline, at sea "
             "temperature — shielded from the thermal swings that dull the "
-            "floral notes of Arriba. The crossing avoided {co2}, measured and "
-            "certified by Anemos: scan the code to check it. Cacao that arrives "
-            "as it left — without warming the planet to reach you."
+            "floral notes of Arriba. The crossing is certified by Anemos: "
+            "scan the code to check it. Cacao that arrives as it left — "
+            "without warming the planet to reach you."
         ),
         "pt-br": (
             "Este cacau Nacional amadureceu em {region}, com favas colhidas e "
@@ -71,9 +72,9 @@ _LONG: dict[str, dict[str, str]] = {
             "contêiner que superaquece e faz aflorar a manteiga de cacau, "
             "viajou à vela a bordo {vessel}, abaixo da linha de flutuação, à "
             "temperatura do mar — protegido das variações térmicas que apagam "
-            "as notas florais do Arriba. A travessia evitou {co2}, medido e "
-            "certificado pela Anemos: escaneie o código para conferir. Um cacau "
-            "que chega como partiu — sem esquentar o planeta para chegar a você."
+            "as notas florais do Arriba. A travessia é certificada pela "
+            "Anemos: escaneie o código para conferir. Um cacau que chega como "
+            "partiu — sem esquentar o planeta para chegar a você."
         ),
     },
     "perou": {
@@ -83,19 +84,19 @@ _LONG: dict[str, dict[str, str]] = {
             "moisit sous les tropiques, il a voyagé à la voile à bord de "
             "{vessel}, sous la ligne de flottaison, à la température de la mer, "
             "en cale ventilée — à l'abri de l'humidité qui gâte la fève. La "
-            "traversée a évité {co2}, mesuré et certifié Anemos : scannez le "
-            "code pour le vérifier. La finesse amazonienne, préservée jusqu'à "
-            "votre atelier — sans réchauffer la planète."
+            "traversée est certifiée Anemos : scannez le code pour la "
+            "vérifier. La finesse amazonienne, préservée jusqu'à votre "
+            "atelier — sans réchauffer la planète."
         ),
         "en": (
             "This fine cacao grew at the edge of the Amazon, in {region}, grown "
             "by {producer}. Instead of enduring a container that condenses and "
             "moulds in the tropics, it travelled under sail aboard {vessel}, "
             "below the waterline, at sea temperature, in a ventilated hold — "
-            "shielded from the damp that spoils the bean. The crossing avoided "
-            "{co2}, measured and certified by Anemos: scan the code to check "
-            "it. Amazonian finesse, preserved to your workshop — without "
-            "warming the planet."
+            "shielded from the damp that spoils the bean. The crossing is "
+            "certified by Anemos: scan the code to check it. Amazonian "
+            "finesse, preserved to your workshop — without warming the "
+            "planet."
         ),
         "pt-br": (
             "Este cacau fino cresceu na borda da Amazônia, em {region}, "
@@ -103,9 +104,9 @@ _LONG: dict[str, dict[str, str]] = {
             "condensa e mofa nos trópicos, viajou à vela a bordo {vessel}, "
             "abaixo da linha de flutuação, à temperatura do mar, em porão "
             "ventilado — protegido da umidade que estraga a fava. A travessia "
-            "evitou {co2}, medido e certificado pela Anemos: escaneie o código "
-            "para conferir. A finura amazônica, preservada até a sua oficina — "
-            "sem esquentar o planeta."
+            "é certificada pela Anemos: escaneie o código para conferir. A "
+            "finura amazônica, preservada até a sua oficina — sem esquentar "
+            "o planeta."
         ),
     },
     "republique_dominicaine": {
@@ -115,27 +116,27 @@ _LONG: dict[str, dict[str, str]] = {
             "dans un conteneur surchauffé, il a voyagé à la voile à bord de "
             "{vessel}, sous la ligne de flottaison, à la température de la mer — "
             "à l'abri des à-coups thermiques qui font blanchir et fatiguent la "
-            "fève. La traversée a évité {co2}, mesuré et certifié Anemos : "
-            "scannez le code pour le vérifier. Un cacao bio intact, de la "
-            "cabosse à la tablette — et la planète épargnée."
+            "fève. La traversée est certifiée Anemos : scannez le code pour "
+            "la vérifier. Un cacao bio intact, de la cabosse à la tablette — "
+            "et la planète épargnée."
         ),
         "en": (
             "This organic cacao was harvested in {region}, fermented and "
             "sun-dried by {producer}. Instead of crossing the Atlantic in an "
             "overheating container, it travelled under sail aboard {vessel}, "
             "below the waterline, at sea temperature — shielded from the "
-            "thermal swings that bloom and tire the bean. The crossing avoided "
-            "{co2}, measured and certified by Anemos: scan the code to check "
-            "it. Organic cacao intact, from pod to bar — and the planet spared."
+            "thermal swings that bloom and tire the bean. The crossing is "
+            "certified by Anemos: scan the code to check it. Organic cacao "
+            "intact, from pod to bar — and the planet spared."
         ),
         "pt-br": (
             "Este cacau orgânico foi colhido em {region}, fermentado e seco ao "
             "sol por {producer}. Em vez de cruzar o Atlântico num contêiner "
             "superaquecido, viajou à vela a bordo {vessel}, abaixo da linha de "
             "flutuação, à temperatura do mar — protegido das variações térmicas "
-            "que embranquecem e cansam a fava. A travessia evitou {co2}, medido "
-            "e certificado pela Anemos: escaneie o código para conferir. Um "
-            "cacau orgânico intacto, da fava à barra — e o planeta poupado."
+            "que embranquecem e cansam a fava. A travessia é certificada pela "
+            "Anemos: escaneie o código para conferir. Um cacau orgânico "
+            "intacto, da fava à barra — e o planeta poupado."
         ),
     },
 }
@@ -188,7 +189,7 @@ _DEFAULT_REGION = {
 _MARKETING_EXAMPLE: dict[str, dict[str, object]] = {
     "equateur": {
         "vessel": "Anemos",
-        "co2_kg": 260,
+        "co2_kg": None,  # plus de chiffre d'évitement
         "region": {"fr": "Los Ríos", "en": "Los Ríos", "pt-br": "Los Ríos"},
         "producer": {
             "fr": "une coopérative de cacao Nacional",
@@ -203,7 +204,7 @@ _MARKETING_EXAMPLE: dict[str, dict[str, object]] = {
     },
     "perou": {
         "vessel": "Artemis",
-        "co2_kg": 290,
+        "co2_kg": None,  # plus de chiffre d'évitement
         "region": {"fr": "San Martín", "en": "San Martín", "pt-br": "San Martín"},
         "producer": {
             "fr": "une coopérative amazonienne",
@@ -218,7 +219,7 @@ _MARKETING_EXAMPLE: dict[str, dict[str, object]] = {
     },
     "republique_dominicaine": {
         "vessel": "Anemos",
-        "co2_kg": 240,
+        "co2_kg": None,  # plus de chiffre d'évitement
         "region": {"fr": "Duarte", "en": "Duarte", "pt-br": "Duarte"},
         "producer": {
             "fr": "une coopérative biologique",
@@ -260,35 +261,26 @@ def _fmt_int(n: int, lang: str) -> str:
     return grouped.replace(",", " ")  # espace insécable : 1 200
 
 
-def _co2_phrase(lang: str, co2_kg: int | None) -> str:
-    """Quantité de CO₂ évité pour le récit long (sans % ; sans chiffre si None)."""
-    if co2_kg is None:
-        return {
-            "fr": "le CO₂ d'un transport conventionnel équivalent",
-            "en": "the CO₂ of an equivalent conventional shipment",
-            "pt-br": "o CO₂ de um transporte convencional equivalente",
-        }[lang]
-    n = _fmt_int(int(co2_kg), lang)
-    return {
-        "fr": f"{n} kg de CO₂",
-        "en": f"{n} kg of CO₂",
-        "pt-br": f"{n} kg de CO₂",
-    }[lang]
+# `_co2_phrase()` est retirée avec la clause qu'elle remplissait : les récits
+# longs ne chiffrent plus d'émissions évitées (base écartée, méthodologie
+# v3.0 §11.1). Parité avec ``coffee_stories`` (verticale sœur, même contrat).
 
 
 def _co2_phrase_short(lang: str, co2_kg: int | None) -> str:
-    """Mention CO₂ pour le format court (étiquette / réseaux)."""
-    if co2_kg is None:
-        return {
-            "fr": "CO₂ évité certifié Anemos, vérifiable.",
-            "en": "CO₂ avoided certified by Anemos, verifiable.",
-            "pt-br": "CO₂ evitado certificado pela Anemos, verificável.",
-        }[lang]
-    n = _fmt_int(int(co2_kg), lang)
+    """Mention pour le format court (étiquette / réseaux).
+
+    🔴 Ne chiffre plus d'émissions évitées, et n'en revendique plus. La
+    comparaison à un transport conventionnel repose sur une base écartée par
+    la méthodologie de performance environnementale v3.0 (§11.1).
+
+    ``co2_kg`` est conservé dans la signature pour ne pas casser les
+    appelants, et volontairement ignoré.
+    """
+    del co2_kg
     return {
-        "fr": f"{n} kg de CO₂ évités, vérifiables.",
-        "en": f"{n} kg of CO₂ avoided, verifiable.",
-        "pt-br": f"{n} kg de CO₂ evitados, verificáveis.",
+        "fr": "Traversée à la voile, certifiée Anemos et vérifiable.",
+        "en": "Sailed crossing, certified by Anemos and verifiable.",
+        "pt-br": "Travessia à vela, certificada pela Anemos e verificável.",
     }[lang]
 
 
@@ -337,7 +329,6 @@ def render_story(
         region=_region_clause(lng, origin, region),
         producer=producer or _DEFAULT_PRODUCER[lng],
         vessel=_vessel_clause(lng, vessel),
-        co2=_co2_phrase(lng, co2_kg),
     )
 
 

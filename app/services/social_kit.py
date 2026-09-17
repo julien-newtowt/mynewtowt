@@ -1,9 +1,12 @@
 """Volet social du kit B2B2C (P12) — visuels prêts à poster, générés en SVG.
 
 Trois visuels **par expédition** (booking), co-brandés NEWTOWT × marque du
-client, dans la charte « Nouvelle Étoile », chacun portant le CO₂ évité en
-**kilogrammes absolus**, la mention « certifié Anemos » et le QR de voyage/
-vérification.
+client, dans la charte « Nouvelle Étoile », chacun portant le **mode de
+propulsion**, la mention « certifié Anemos » et le QR de voyage/vérification.
+
+🔴 Plus aucun chiffre d'émissions évitées : la base de comparaison est écartée
+(méthodologie v3.0 §11.1), et ces visuels sont la surface la plus diffusée de
+toutes — ils sont faits pour être republiés.
 
 Le SVG est autonome (styles inline autorisés dans SVG), rendu **côté serveur**
 donc compatible CSP-strict (aucun ``<script>``), et embarque le QR via le
@@ -213,15 +216,21 @@ def _qr_caption(lang: str, *, qr_is_voyage: bool) -> str:
 
 
 def _co2_summary(co2_kg: int | None, lang: str) -> str:
-    """Chaîne contiguë « 300 kg de CO₂ évité — certifié Anemos » (aria/desc).
+    """Chaîne contiguë « Traversée à la voile — certifié Anemos » (aria/desc).
 
-    Sans certificat : phrase qualitative, **aucun chiffre** (garde-fou ECGT).
+    🔴 Plus aucun chiffre d'émissions évitées.
+
+    La carte portait « 300 kg de CO₂ évité », calculé contre un cargo
+    conventionnel à 13,7 gCO₂/t·km — base écartée par la méthodologie de
+    performance environnementale v3.0 (§11.1). Les cartes sociales sont la
+    surface la plus DIFFUSÉE de toutes : elles sont faites pour être
+    republiées par le client et ses propres clients.
+
+    ``co2_kg`` est conservé dans la signature pour ne pas casser les appelants,
+    et volontairement ignoré.
     """
-    certified = t("social_certified", lang)
-    if co2_kg is None:
-        return f"{t('social_co2_qualitative', lang)} — {certified}"
-    n = _fmt_int(co2_kg, lang)
-    return f"{n} kg {t('social_co2_avoided', lang)} — {certified}"
+    del co2_kg
+    return f"{t('social_co2_qualitative', lang)} — {t('social_certified', lang)}"
 
 
 def _eyebrow(origin: str | None, origin_label: str, lang: str) -> str:
@@ -234,34 +243,27 @@ def _eyebrow(origin: str | None, origin_label: str, lang: str) -> str:
 
 # ── Blocs composables ──────────────────────────────────────────────────────
 def _co2_block(x: int, y: int, co2_kg: int | None, lang: str, *, num_size: int) -> str:
-    """Bloc CO₂ : grand nombre vert + « kg » + libellé, ou phrase qualitative."""
-    if co2_kg is None:
-        lines = _wrap(t("social_co2_qualitative", lang), 22)
-        return _multiline(
-            x,
-            y,
-            lines,
-            size=int(num_size * 0.32),
-            color=_BLANC,
-            font=_FONT_SERIF,
-            line_height=int(num_size * 0.36),
-        )
-    n = _fmt_int(co2_kg, lang)
-    kg_size = int(num_size * 0.34)
-    num = (
-        f'<text x="{x}" y="{y}" font-family="{_FONT_SANS}" font-weight="800">'
-        f'<tspan font-size="{num_size}" fill="{_VERT}">{_esc(n)}</tspan>'
-        f'<tspan font-size="{kg_size}" fill="{_VERT}" dx="14">kg</tspan></text>'
-    )
-    label = _text(
+    """Bloc de la carte : la phrase du mode de propulsion, jamais un chiffre.
+
+    🔴 La branche « grand nombre vert » est SUPPRIMÉE, pas contournée. La
+    laisser derrière un ``if co2_kg is not None`` aurait suffi à la faire
+    revenir dès qu'un appelant repasserait une valeur — et c'est exactement
+    ainsi que deux scripts JS avaient survécu au premier retrait, en gardant
+    les facteurs en repli codé.
+
+    ``co2_kg`` reste dans la signature pour ne pas casser les appelants.
+    """
+    del co2_kg
+    lines = _wrap(t("social_co2_qualitative", lang), 22)
+    return _multiline(
         x,
-        y + int(num_size * 0.30),
-        t("social_co2_avoided", lang),
-        size=int(num_size * 0.24),
+        y,
+        lines,
+        size=int(num_size * 0.32),
         color=_BLANC,
-        weight="600",
+        font=_FONT_SERIF,
+        line_height=int(num_size * 0.36),
     )
-    return num + label
 
 
 def _qr_card(

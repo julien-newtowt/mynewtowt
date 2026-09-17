@@ -103,11 +103,15 @@ async def test_kit_page_with_cert_and_origin(db):
     assert resp.template.name == "client/kit.html"
     ctx = resp.context
     assert ctx["origin"] == "colombie"
-    assert ctx["co2_kg"] == 300  # depuis le certificat (co2_avoided_kg)
+    # 🔴 Plus de tonnage évité dans le kit : `co2_kg` est tari à la source
+    # (base de comparaison écartée, méthodologie v3.0 §11.1). Le certificat
+    # reste, et avec lui le QR de vérification.
+    assert ctx["co2_kg"] is None
     assert ctx["cert"] is not None
     assert "Huila, Colombie" in ctx["story_long"]
     assert "l'Anemos" in ctx["story_long"]
-    assert "300 kg" in ctx["story_short"]
+    # Le récit court ne chiffre plus d'évitement (base écartée).
+    assert "300 kg" not in ctx["story_short"]
     assert ctx["verify_url"].endswith("/verify/ANEMOS-TEST-1")
 
 

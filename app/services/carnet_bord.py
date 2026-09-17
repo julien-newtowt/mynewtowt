@@ -496,15 +496,24 @@ async def get_carnet_bord_data(
         cert = cert.scalar_one_or_none()
 
     if cert:
-        data.co2_avoided_kg = cert.co2_avoided_kg
+        # 🔴 Le carnet ne porte plus que la MESURE.
+        #
+        # `co2_avoided_kg`, `co2_conventional_kg` et le taux qui en dérivait
+        # reposaient sur un porte-conteneurs conventionnel à 13,7 gCO₂/t·km,
+        # base écartée par la méthodologie v3.0 (§11.1).
+        #
+        # ⚠️ Les laisser après la migration `20260911_0146` était pire que de
+        # rien faire : les certificats récents portent `NULL`, le filtre
+        # `|float` du gabarit les transformait en `0.0`, et le chapitre
+        # imprimait « 0 kg évités » et « 0 % de décarbonation » — un chiffre
+        # FABRIQUÉ là où il n'y avait pas de donnée.
+        #
+        # Le taux de décarbonation défendable existe désormais ailleurs, avec
+        # sa base nommée : `services.decarbonation`. Il n'est pas repris ici,
+        # la méthodologie §1.2 bis ne le publiant pas de notre initiative.
         data.co2_emitted_kg = cert.co2_emitted_kg
-        data.co2_conventional_kg = cert.co2_conventional_kg
         data.method = cert.method
         data.distance_source = cert.distance_source
-
-        # Calculer le taux de décarbonation
-        if cert.co2_conventional_kg and cert.co2_conventional_kg > 0:
-            data.decarbonation_rate = (cert.co2_avoided_kg / cert.co2_conventional_kg) * 100
 
     # Consommation depuis NoonReports
     if noon_reports:
@@ -513,8 +522,15 @@ async def get_carnet_bord_data(
             data.fuel_consumed_l = sum(fuel_values)
 
     # Facteurs par défaut
-    data.towt_factor = 1.5  # g CO2/t.km
-    data.conventional_factor = 13.7  # g CO2/t.km
+    # 🔴 Les deux facteurs sont ECARTES (decision du 2026-09-11) : 13,7 est
+    # une base de comparaison retiree par la methodologie v3.0 (§11.1), et
+    # 1,5 un modele perime — 8,5 fois plus bas que l'intensite que la
+    # methodologie publie elle-meme. Le carnet de bord est remis aux
+    # chargeurs : il ne peut pas les porter.
+    #
+    # Laisses a None : le gabarit affiche « — » plutot qu'une constante.
+    data.towt_factor = None
+    data.conventional_factor = None
 
     # =========================================================================
     # CHAPITRE 6 - Performance de navigation
